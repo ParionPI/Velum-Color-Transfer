@@ -1,99 +1,153 @@
 # Velum
 
-[English](./README.md) · [简体中文](./README_ZH.md)
+[简体中文](./README.md) · [English](./README_EN.md)
 
-> **Your palette is lovely. Mine next.**
-> Take the colours of any reference image and move them onto yours.
+> **你的配色很好，下一秒是我的了。**
 
-Velum is a **reference-driven colour transfer** tool. Give it two images — a **source** to be graded and a **reference** whose look you want — and it moves the reference's tonality, luminance relationships and colour character onto the source, **while keeping the source's own composition and texture intact**.
+Velum 是一套**参考图驱动的色彩迁移**工具。给它两张图——一张要调色的**源图**，一张你想要的**参考图**——它把参考图的色调、明暗关系、色彩气质搬到源图上，同时**保住源图自己的构图和纹理**。
 
-It comes in two forms sharing one engine:
+它有两种形态，同一套内核：
 
-- **ComfyUI node** `Velum 色彩迁移 (4.10.1)` — drop it into a workflow and let it batch.
-- **Standalone grading console (web)** — double-click `一键启动.bat` to open it, **with no ComfyUI required**. Drag sliders, watch the result live.
+- **ComfyUI 节点** `Velum 色彩迁移 (4.10.1)` —— 塞进工作流里，自动跑批。
+- **独立调色台（网页）** —— 双击 `一键启动.bat` 就开，**不需要先装 ComfyUI**，滑杆实时调，边看边改。
 
 ---
 
-## Why it's better
+## 它到底好在哪
 
-Most colour transfer tools in the wild perform **a single global affine transform** in some colour space: shift things a bit, scale things a bit. Fast, certainly — but with a hard ceiling. That approach cannot "push the sky toward blue while leaving skin alone".
+市面上的色彩迁移，多数是在某个颜色空间里做**一次全局仿射变换**：整体平移一下、缩放一下。快是真快，但能力有天花板——它没办法"把天空往蓝里推、同时把皮肤留在原地"。
 
-Velum takes a different path:
+Velum 走的是另一条路：
 
 ```mermaid
 flowchart TB
-  A["Source + reference"] --> B["Whole-image colour modelling<br/>CAM16 lightness/chroma · Oklab"]
-  B --> C["Distribution-aware, non-linear mapping<br/>continuous-spectrum mapping + weighted quantile matching"]
-  C --> D["Low-curvature spatial residual + local support<br/>same colour, different context, handled separately"]
-  D --> E["Debanding<br/>smooth only in low-energy regions, keep the texture"]
-  E --> F["Layer blending<br/>luminosity match · colour match · colour overlay"]
-  F --> G["Graded result<br/>exportable as a .cube for AE / PR"]
+  A["源图 + 参考图"] --> B["整图色彩关系建模<br/>CAM16 明度/色度 · Oklab"]
+  B --> C["分布感知的非线性映射<br/>连续谱映射 + 加权分位匹配"]
+  C --> D["低曲率空间残差 + 局部支撑<br/>同色不同上下文分别处理"]
+  D --> E["去色带<br/>只在低能量区平滑，保住纹理"]
+  E --> F["图层自由混合（可选）<br/>亮度匹配 · 色彩匹配 · 色彩叠加"]
+  F --> G["调色结果<br/>可导出 .cube 给 AE / PR"]
 ```
 
-In plain terms, it does three things a classic affine transfer cannot:
+翻译成人话，它比传统做法多做了三件事：
 
-1. **It doesn't just move colours — it re-orders them.** Different colours at the same luminance can be routed to different destinations. A global affine map fundamentally cannot do this.
-2. **It looks at distributions, not just averages.** Weighted quantile matching and continuous-spectrum mapping align the two images' colour distributions, instead of matching one pair of means and variances.
-3. **It kills banding along the way.** Most colour transfer leaves visible stair-stepping across sky gradients. Velum debands, and only in low-energy regions, so your line art and fine detail survive untouched.
+1. **它不只会"整体挪"，还会"重新排队"。** 同一个亮度区间里的不同颜色，可以被送到不同的目的地。传统仿射做不到这点。
+2. **它看分布，不看均值。** 用加权分位匹配和连续谱映射对齐两张图的色彩分布，而不是只对一对均值和方差。
+3. **它顺手把色带灭了。** 大多数色彩迁移搬完之后，天空渐变会出现一层层"台阶"。Velum 自带去色带，而且只在低能量区域动手，源图的线条和细节不会被抹平。
 
 ---
 
-## Six-panel comparison — see the gap yourself
+## 六格对比，自己看差距
 
-The console has a built-in **six-panel comparison**. One click lays the mainstream approaches out next to Velum:
+调色台内置 **六格对比**，一键出图，直接把主流做法和 Velum 排在一起：
 
 | | | |
 |---|---|---|
-| **source** | **reinhard** | **mkl** |
-| **reference** | **hm-mkl-hm** | **VELUM** |
+| **源图** | **reinhard** | **mkl** |
+| **参考图** | **hm-mkl-hm** | **VELUM** |
 
-The implementation comments describe each of those three bluntly:
+这三位的脾气，实现代码里的注释写得很直白：
 
-- **reinhard** (the 2001 classic — mean/std transfer in Ruderman lab space): one global affine map. Stable, but it **cannot re-order tonality**; and because the std ratio is unbounded, a slightly odd reference can invent saturation that the reference never had.
-- **mkl** (Monge–Kantorovich linear optimal transport): smarter than reinhard — it also matches inter-channel correlation (covariance). But **it is still one global affine map**, so it likewise cannot route different colours to different destinations.
-- **hm-mkl-hm** (histogram matching chained with MKL): per-channel CDF matching, greedy and direct. The cost is that when the reference's CDF is narrow, a whole range of source levels collapses onto one output level — **that is exactly where banding comes from**.
+- **reinhard**（2001 年经典，Ruderman lab 里的均值/方差迁移）：一个全局仿射映射。好处是稳，代价是**无法重排色调**；而且标准差比值没有上界，参考图偏一点，它就能给你造出参考图里根本不存在的艳色。
+- **mkl**（Monge–Kantorovich 线性最优传输）：比 reinhard 聪明，连通道之间的相关性（协方差）一起匹配。但**它依然是一个全局仿射映射**，同样没办法把不同颜色路由到不同终点。
+- **hm-mkl-hm**（直方图匹配 + MKL 串起来）：逐通道 CDF 精确匹配，贪心、直接。代价是当参考图的 CDF 很窄时，源图一堆亮度级会被压到同一级上——**这就是色带的来源**。
 
-To inspect a difference closely, use **A/B compare**: drag the splitter left and right. The comparison target can be `hm-mkl-hm` / `mkl` / `reinhard` / `source`, plus **`cube preview`** — which shows you directly how far "native Velum grading" is from "the LUT version Velum exports".
-
----
-
-## What the console can do
-
-- **Three view modes**: single output / six-panel comparison / A-B comparison.
-- **Layer blending** (Photoshop-style, stacked bottom to top):
-  - **Luminosity match** — hand the source's light-and-dark relationships back
-  - **Colour match** — hand the source's colours back
-  - **Colour overlay** — overlay channel `source` / `reinhard` / `hm-mkl-hm`, mode `overlay` / `screen` / `multiply` / `color`; the result is pulled back to Velum's luminosity afterwards
-  - Both match sliders at 0 gives **100% the original image**, pixel for pixel, without altering a single byte
-- **Debanding**: automatic inference or a manual strength; the region algorithm can be `gradient energy` (default) / `DoG guided filter` / `raw DoG`.
-- **Compute device**: auto (GPU preferred) / CPU / GPU, falling back automatically when VRAM runs short.
-- **`.cube` export**: one click generates a 65³ 3D LUT that AE Lumetri and Premiere load directly — **all your layer settings are baked in**. The save dialog is the native Windows one, and it **remembers the last folder**.
-- Resolution presets, zoom-to-inspect, result download, light/dark skin.
-- Drag images in, or paste with `Ctrl+V`.
+想在两个版本之间细看差异，用 **AB 对比**：拖动分割线左右拉，对比对象可选 `hm-mkl-hm` / `mkl` / `reinhard` / `源图`，还有 **`cube 预览`**——用它可以直接看"原生 Velum 调色"和"Velum 导出的 LUT 版本"差多少。
 
 ---
 
-## Who it's for
+## 13 组实测案例
 
-- **Artists / concept design**: take one reference image and pull a whole set of images to a consistent tone.
-- **AI creators**: gacha out several keyframes for a shot, find their colour completely inconsistent — Velum unifies the tonality for you.
-- **Photography / video post**: lock the look in the console first, export a LUT, then apply it in bulk back in AE / PR.
-- **ComfyUI users**: wire colour transfer in after generation as a grading step, and let it run with the batch.
-- **Anyone who doesn't want to touch an environment**: on Windows, unzip, double-click, done.
+每行从左到右：**源图 / 参考图 / HM-MKL-HM / MKL / Reinhard / Velum（关闭去色带）/ Velum（自动去色带）**。每格标签里是该算法的耗时（同批次 5 轮暖态中位数，不含读图和 PNG 编码）。
+
+> 说明：这组对比图由 **Velum 4.07 内核**生成，4.10.1 的算法主体相同，但做过稳定性与速度优化，个别案例的观感可能略有差异。
+
+[![五算法 13 组案例对比](./docs/comparison.jpg)](./docs/comparison.jpg)
+
+> 点图可看大图。案例里有不少是**故意刁难算法**的极端组合：灰度图配彩虹、暗夜街景配一张纯色色卡——正是这类情况，最能看出谁只是"整体挪"、谁真正理解了颜色分布。
+
+### 逐组看，Velum 好在哪
+
+**① `dot`：参考图有什么，结果就该有什么。**
+源图是灰底上的灰色圆和灰点；参考图是红色大圆配上一圈彩色小点。
+- Reinhard 把整张图染成一片砖橙色，MKL 变成暗红，**彩色小点全没了**——它们只会"整体挪"，不可能让同一片灰同时变成红、绿、蓝、黄。
+- HM-MKL-HM 倒是有颜色，但凭空造出一块**参考图里根本没有的青蓝色背景**。
+- **Velum 是唯一一个结构和色彩同时对上的**：大圆正红，小点五颜六色，背景保持中性灰。这就是"重新排队"能力最直观的证据。
+
+**② `target`：给它一张极简色卡，它不会乱编颜色。**
+源图是一张层次丰富的夜间街景，参考图只是"灰底 + 红圆 + 黄点"。
+- HM-MKL-HM 和 Reinhard 都冒出了大片**亮紫/蓝绿**——这些颜色参考图里一点都没有，纯属算法自己脑补。
+- **Velum 严格守在参考图给的调色板里**：只用灰、红、黄三色重新诠释了整个场景，街灯和招牌还落在了黄色上。
+
+**③ `ball`：明暗关系一点都不能乱。**
+源图是一个灰度球体，参考图是一条彩虹渐变。
+- MKL 和 Reinhard 几乎原封不动——灰度源图没有色彩相关性可匹配，仿射映射直接"失效"，**参考图的风格完全没搬过来**。
+- HM-MKL-HM 球体顶部被**冲成一片死白**，细节丢失。
+- **Velum 把彩虹按亮度重新铺到了球面上**，球体的立体感和高光过渡完整保留。
+
+**④ `0429_face`：人物的皮肤和面部质感要守住。**
+参考图是一张高饱和的蓝紫色插画。
+- Reinhard 把窗户和高光**炸成了刺眼的青绿色和死白**；HM-MKL-HM 让脸部变得**斑驳脏污**。
+- **Velum 的面部最干净自然**：环境整体换成了参考图的蓝紫氛围，皮肤依然是可信的肤色——"把背景推远、把皮肤留住"正是全局仿射做不到的事。
+
+**⑤ `case2`：画面的主次关系不能被打乱。**
+源图是蓝调的夜景，参考图的视觉焦点是一处暖橙色的灯光建筑。
+- Reinhard 把全图**刷成一片单调的青绿**；HM-MKL-HM 和 MKL 把暖橙色**撒满了整个画面**，到处是橙斑。
+- **Velum 把暖光精准收拢在画面中心的光源处**，周围维持沉静的蓝调——和参考图的构成一模一样。
+
+**⑥ `0284_sky`：天空渐变是检验色带的试金石。**
+源图是一张城市黄昏天空，参考图主色是鲜红。
+- 关闭去色带时，Velum 天空里能看到**轻微的条带**；打开**自动去色带**后，天空渐变变得**平滑柔和**，桥梁的线条却依然锐利。
+- 对比 HM-MKL-HM，天空里出现了**突兀的青蓝色块**——这正是 CDF 被压窄后产生的典型色带。
+
+### 一个诚实的观察
+
+Velum 不是每一格都"最惊艳"。像 `exposure`、`sakura` 这类**源图和参考图本身就很接近**的案例，五种算法结果相差无几——这很正常，好的色彩迁移在"本来就差不多"时应该收着，而不是硬造变化。
+
+Velum 真正拉开差距的，是**参考图和源图差异大、或者需要不同颜色去往不同地方**的情况。代价也很明确：它的耗时通常是传统方法的几倍（见每格标签），去色带开启时更多。在追求可控、不出错的场景里，这是值得的。
 
 ---
 
-## Quick start
+## 调色台能干什么
 
-### Option 1: ComfyUI node
+- **三种查看模式**：单独出图 / 六格对比 / AB 对比。
+- **图层混合**（Photoshop 风格，从上到下叠加）：
+  - **亮度匹配** —— 把源图的明暗关系还回来
+  - **色彩匹配** —— 把源图的色彩还回来
+  - **色彩叠加** —— 叠加通道可选 `源图` / `reinhard` / `hm-mkl-hm`，模式可选 `叠加` / `滤色` / `正片叠底` / `颜色`，叠加后自动拉回 Velum 明度
+  - 两个匹配滑杆都拉到 0 = **100% 原图**，逐像素一致，不改一个字节
+- **去色带**：自动推断，或手动给强度；区域算法可选 `梯度能量`（默认）/ `DoG 引导滤波` / `原始 DoG`。
+- **计算设备**：自动（优先 GPU）/ CPU / GPU，显存不够自动回退。
+- **导出 `.cube`**：一键生成 65³ 3D LUT，AE Lumetri、PR 直接挂，**图层设置全部烘焙进去**。保存路径用系统原生对话框，**记住上次保存的目录**。
+- 分辨率切换、放大查看、下载结果、亮色/暗色皮肤。
+- 图片直接拖入，或 `Ctrl+V` 粘贴。
+
+---
+
+## 谁适合用它
+
+
+- **美术 / 概念设计**：拿一张参考图，批量把整组图拉到统一色调。
+- **AI创作者**：用ai抽卡，生成了多张镜头关键帧，但是色调不统一，velum可以帮你统一调性。
+- **摄影 / 视频后期**：先在调色台里把色调定下来，导出 LUT，回 AE / PR 批量应用。
+- **ComfyUI 玩家**：色彩迁移接在生成之后校色，作为工作流里的一环，跟着批处理一起跑。
+- **完全不想折腾环境的人**：Windows 下解压、双击、出图。
+
+  
+
+---
+
+## 快速开始
+
+### 方式一：ComfyUI 节点
 
 ```
 ComfyUI/custom_nodes/ComfyUI-Velum/
 ```
 
-Restart ComfyUI, search for **"Velum 色彩迁移"**, wire two `Load Image` nodes to source and reference, and send the output to `Preview Image` / `Save Image`.
+重启 ComfyUI，搜索 **"Velum 色彩迁移"**，用两个 `Load Image` 分别接源图和参考图，输出接 `Preview Image` / `Save Image`。
 
-**Dependencies** (Torch and Pillow come from ComfyUI — do not replace them):
+**依赖**（Torch 和 Pillow 由 ComfyUI 提供，不要替换）：
 
 ```
 numpy>=1.26,<2.2
@@ -103,104 +157,104 @@ colour-science>=0.4.6,<0.4.7
 opencv-python>=4.8,<4.12
 ```
 
-**Node inputs**
+**节点参数**
 
-| Input | Description |
+| 参数 | 说明 |
 |---|---|
-| `source_image` | the image to grade; the output keeps its original size |
-| `reference_image` | the colour reference; any size, batch of 1 or the same length as the source |
+| `source_image` | 要调色的源图，输出保持它原本的尺寸 |
+| `reference_image` | 色彩参考图，尺寸可以不一样；批次为 1 或与源图等长 |
 | `deband_mode` | `auto` / `off` / `manual` |
-| `manual_strength` | used only by `manual` mode |
+| `manual_strength` | 仅 `manual` 模式下使用 |
 | `backend` | `auto` / `cpu` / `gpu` |
-| `cpu_workers` | CPU thread cap; never touches global Torch / OpenCV thread settings |
-| `structure_field` | deband region algorithm: gradient energy / DoG guided / raw DoG |
-| `strength` | blend between graded result and original: 1 = full grade, 0 = output the original and skip the compute |
+| `cpu_workers` | CPU 线程上限，不会动全局 Torch / OpenCV 线程设置 |
+| `structure_field` | 去色带区域算法：梯度能量 / DoG 引导滤波 / 原始 DoG |
+| `strength` | 调色结果与原图的混合比例，1 = 完整调色，0 = 直接输出原图并跳过计算 |
 
-A single reference image broadcasts across the whole source batch; equal-length batches are paired one-to-one. Any other combination fails with a clear error — it **never silently loops or mismatches**.
+参考图为单张时，可以广播给整批源图；等长时逐张配对。其他组合会明确报错，**不会静默循环或错配**。
 
-### Option 2: standalone console (no ComfyUI)
+### 方式二：独立调色台（免装 ComfyUI）
 
-- **Windows CPU bundle**: download `Velum-4.10.1-CPU-Windows-x64.zip` from [Releases](../../releases), unzip it completely, then double-click **`一键启动.bat`**. It ships Python 3.12.10 and every dependency — **no Python install, no ComfyUI, no network installs of any kind**.
-- **Existing Python**: clone this repo and double-click `一键启动.bat` in the directory (defaults to port 8899, auto-increments if busy).
-- **Suspect something is off with the environment?** Double-click **`一键自检.bat`**. It checks dependencies, runs a small image for real, and writes a diagnostic JSON.
+- **Windows CPU 整合包**：从 [Releases](../../releases) 下载 `Velum-4.10.1-CPU-Windows-x64.zip`，完整解压后双击 **`一键启动.bat`**。自带 Python 3.12.10 和全部依赖，**不用装 Python、不用装 ComfyUI、不会联网安装任何东西**。
+- **已有 Python 环境**：克隆本仓库后，双击目录里的 `一键启动.bat`（默认 8899 端口，冲突自动递增）。
+- 怀疑环境有问题？双击 **`一键自检.bat`**，它会检查依赖、跑一张小图，并输出诊断 JSON。
 
-The neat part: **one folder, two identities.** Drop the folder into `ComfyUI/custom_nodes` and the node uses ComfyUI's own Python and Torch/CUDA. Launch it standalone and it uses its bundled CPU environment. It does not rewrite your module paths, does not overwrite your packages, and does not touch global environment variables.
+有意思的是：**同一个文件夹，两种身份兼得。** 把这个文件夹丢进 `ComfyUI/custom_nodes`，节点会自动使用 ComfyUI 自己的 Python 和 Torch/CUDA；单独启动时则用内置的 CPU 环境。它不会改你的模块路径、不会覆盖你的包，也不碰全局环境变量。
 
 ---
 
-## Export a LUT for AE / PR
+## 导出 LUT，进 AE / PR
 
-Once the look is right in the console, hit **`导出.cube`** (Export .cube):
+在调色台调好之后，点 **`导出.cube`**：
 
-- Output is a **65³ 3D LUT**, in **sRGB / Rec.709 encoded RGB, full range 0–1, SDR**. Convert Log / HDR / ACES material into that space first, or place the LUT after your colour-space conversion.
-- The current resolution, grading parameters, and the luminosity match, colour match, and colour overlay channel / mode / strength are **all baked into the LUT**.
-- Fitting method: a **curvature-regularised trilinear least-squares** fit from "source image → final console display", rather than feeding a colour chart back through the distribution matcher. Colours that never appeared in the image extrapolate smoothly, so nothing bizarre shows up later in video.
-- After exporting, it **tells you the error directly** (mean and P95). Above 4/255 it suggests you preview first.
-- One LUT is a fixed mapping for one shot/scene — it **will not flicker frame to frame**.
+- 输出 **65³ 3D LUT**，色彩约定是 **sRGB / Rec.709 编码 RGB、全范围 0–1、SDR**。Log / HDR / ACES 素材请先转到这个空间，或者把 LUT 挂在色彩转换之后。
+- 当前的分辨率、调色参数，以及亮度匹配、色彩匹配、色彩叠加的通道/模式/强度，**全部烘焙进 LUT**。
+- 拟合方式：对"源图 → 网页最终显示结果"做**曲率正则化三线性最小二乘**，而不是把色卡重新送去做分布匹配。原图没出现过的颜色会平滑外推，不会在视频里冒出奇怪的颜色。
+- 导出后会**直接告诉你误差**（平均值和 P95），超过 4/255 会提示你先预览检查。
+- 一个 LUT 对应一个镜头/场景的固定映射，**不会逐帧闪烁**。
 
-**Measured error** (1280-wide source, held-out pixels, solver fully converged):
+**实测误差**（1280 宽源图、留出像素做验证、求解器完全收敛）：
 
-| Scenario | Mean error |
+| 场景 | 平均误差 |
 |---|---|
-| default layers | 3.4 / 255 |
-| 12 overlay channel × mode combinations | 1.6 – 2.4 / 255 |
+| 默认图层 | 3.4 / 255 |
+| 12 种叠加通道 × 模式组合 | 1.6 – 2.4 / 255 |
 
-**One honest limitation**: a LUT is, by definition, "one colour in → one colour out". Velum's debanding looks at **where a pixel is**, so it cannot be fully packed into a LUT — that part is approximated by an average. With debanding off, it is in theory exactly reproducible. That is precisely why the `cube preview` comparison exists: so you can see for yourself where the difference lies.
+**一个诚实的边界**：LUT 本质上是"同一个颜色只能对应一个输出"。而 Velum 的去色带会看像素**所在的位置**，所以它没法被完整塞进 LUT——这部分只能取平均近似。关掉去色带时，理论上可以完全复刻。这也是我们专门做了 `cube 预览` 对比项的原因：让你自己看见差在哪。
 
 ---
 
-## Speed and stability
+## 速度与稳定性
 
-Measured locally on an RTX 5090 with 8 threads (your mileage will vary with image and load):
+本机 RTX 5090、8 线程实测（不同图片和负载会有出入）：
 
-| Scenario | Time |
+| 场景 | 耗时 |
 |---|---|
-| 2944×1648, AUTO | ~4.7 s |
-| 1600×1965, CPU | ~4.1 s |
-| 1600×1965, GPU | ~3.4 s |
-| PNG lossless encode | ~0.36 s |
-| web console cache hit | ~0.41 s |
+| 2944×1648，AUTO | 约 4.7 s |
+| 1600×1965，CPU | 约 4.1 s |
+| 1600×1965，GPU | 约 3.4 s |
+| PNG 无损编码 | 约 0.36 s |
+| 网页缓存命中 | 约 0.41 s |
 
-The first image is always slower (kernel compilation, worker startup, GPU init). The numbers above apply from the second image on.
+第一张总会慢一些（内核编译、worker 启动、GPU 初始化），从第二张起才是上面的数字。
 
-**It is designed so that a failure only ever takes itself down:**
+**它被设计成"出事也只炸自己"：**
 
-- Velum's compute runs in a **separate child process**; the ComfyUI host never imports its Numba / SciPy / OpenCV kernels.
-- The child starts with `-I`, ignoring `PYTHONPATH` and user site directories, so it cannot pollute the host environment.
-- Native crashes and timeouts are converted into **clear node errors** with the exit code and log path — never disguised as success, and never silently retried inside the host.
-- Every run writes a `runtime_info.json` recording the actual startup modules, threads and compute backend, so problems are traceable.
-- Workers are reused, and exit automatically after being idle, handing the VRAM back.
+- Velum 的计算只在**独立的子进程**里跑，ComfyUI 宿主不导入它的 Numba / SciPy / OpenCV 内核。
+- 子进程以 `-I` 启动，忽略 `PYTHONPATH` 和用户 site 目录，不会污染宿主环境。
+- 原生崩溃或超时会被转换成**清晰的节点报错**，附上退出码和日志路径，不伪装成成功、也不会在宿主里偷偷重试。
+- 每次运行都会写下 `runtime_info.json`，记录真实的启动模块、线程和计算后端——排查问题时有据可查。
+- worker 会被复用；空闲一段时间后自动退出，把显存还回去。
 
 ---
 
-## Project structure
+
+## 项目结构
 
 ```text
-__init__.py             ComfyUI node registration
-nodes.py                ComfyUI node: IMAGE batching, validation, reporting
-worker.py               isolated child-process entry point
-isolated_client.py      host <-> worker transport (process isolation)
-launch_web.py           standalone launcher (offline self-check + start)
-一键启动.bat             double-click to start the standalone console
-一键自检.bat             dependency check + real small-image self-test
-_velum410/              the Velum colour transfer engine
-web/                    the console (server, frontend, LUT fitting and saving)
-js/                     ComfyUI frontend labels
-ENGINE_MANIFEST.json    engine file provenance and SHA256
+__init__.py              ComfyUI 节点注册
+nodes.py                 ComfyUI 节点：IMAGE 批处理、参数校验、报告
+worker.py                隔离子进程入口
+isolated_client.py       宿主与 worker 的通信（进程隔离）
+launch_web.py            独立网页启动入口（离线自检 + 启动）
+一键启动.bat              双击即可启动独立调色台
+一键自检.bat              依赖检查 + 真实 CPU 小图自检
+_velum410/               Velum 色彩迁移内核
+web/                     调色台网页（服务、前端、LUT 生成与保存）
+js/                      ComfyUI 前端中文界面脚本
+ENGINE_MANIFEST.json     内核文件来源与 SHA256
 ```
 
-The console listens on `127.0.0.1` only. If you genuinely need it on a **trusted LAN**, run
-`python web/server.py --host 0.0.0.0 --port 8899`. It is a shared-memory single-user workbench,
-not a multi-user isolated service — do not expose it to the public internet. Remote devices on
-that setup cannot use "Export .cube", which is deliberately restricted to loopback same-origin.
+独立调色台默认只监听 `127.0.0.1`。如果确实需要在**可信局域网**内使用，可以运行
+`python web/server.py --host 0.0.0.0 --port 8899`；它面向的是共享内存的单用户工作台，
+不是多用户隔离服务，请不要直接暴露到公网。此时远端设备无法使用"导出 .cube"（该功能限定本机同源）。
 
 ---
 
-## License and credits
+## 许可证与致谢
 
-Released under the **Apache License 2.0** — full text in [LICENSE](./LICENSE).
+本项目以 **Apache License 2.0** 发布，全文见 [LICENSE](./LICENSE)。
 
-Third-party references:
+第三方参考：
 
 - Reinhard et al. 2001, *Color Transfer between Images*, IEEE CG&A — <https://doi.org/10.1109/38.946629>
-- The `hm-mkl-hm` pipeline idea was inspired by [color-matcher](https://github.com/hahnec/color-matcher) (MIT). This project is an **independent reimplementation** and copies none of its source code.
+- `hm-mkl-hm` 流水线思路受 [color-matcher](https://github.com/hahnec/color-matcher)（MIT）启发，本项目为**独立重新实现**，未复制其源码。
