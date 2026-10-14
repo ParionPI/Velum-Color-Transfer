@@ -65,52 +65,11 @@ Each row, left to right: **source / reference / HM-MKL-HM / MKL / Reinhard / Vel
 
 [![Five algorithms across 13 cases](./docs/comparison.jpg)](./docs/comparison.jpg)
 
-> Click for full size. Several cases are **deliberately hostile**: a greyscale image against a rainbow, a night street scene against a flat colour swatch. These are exactly the cases that reveal which algorithm merely "shifts everything" and which one actually understands the colour distribution.
+> Click for full size.
 
-### Case by case: where Velum wins
-
-**① `dot`: whatever the reference has, the result should have.**
-The source is grey dots and a grey circle on grey; the reference is a red disc ringed with multicoloured dots.
-- Reinhard tints everything brick-orange and MKL goes dark red — **the coloured dots vanish**. A global shift cannot turn one patch of grey into red, green, blue *and* yellow at once.
-- HM-MKL-HM does produce colour, but invents a **cyan-teal background the reference never had**.
-- **Velum is the only one that gets structure and colour right together**: a true red disc, multicoloured dots, a neutral grey background. This is the clearest evidence of the "re-ordering" ability.
-
-**② `target`: hand it a minimal swatch and it won't invent colours.**
-The source is a richly layered night street; the reference is just "grey + red disc + yellow dot".
-- HM-MKL-HM and Reinhard both sprout large areas of **bright purple / blue-green** — not a trace of which exists in the reference.
-- **Velum stays strictly inside the reference's palette**: it re-renders the whole scene in grey, red and yellow, and the streetlights and signage land on the yellow.
-
-**③ `ball`: the light-and-dark structure must not break.**
-The source is a greyscale sphere; the reference is a rainbow gradient.
-- MKL and Reinhard barely change anything — a greyscale source has no colour correlation to match, so the affine map effectively **fails to transfer the reference at all**.
-- HM-MKL-HM **blows the top of the sphere out to flat white**, losing detail.
-- **Velum re-lays the rainbow across the sphere by luminance**, keeping its volume and highlight falloff intact.
-
-**④ `0429_face`: skin and facial texture must hold.**
-The reference is a highly saturated blue-violet illustration.
-- Reinhard **blows the windows and highlights out into harsh cyan-green and dead white**; HM-MKL-HM leaves the face **blotchy and dirty**.
-- **Velum gives the cleanest, most natural face**: the environment takes on the reference's blue-violet mood while the skin stays believable — "push the background, keep the skin" is exactly what a global affine map cannot do.
-
-**⑤ `case2`: the visual hierarchy must not be scrambled.**
-The source is a blue night scene; the reference's focal point is a warm orange lit building.
-- Reinhard **washes everything into flat teal**; HM-MKL-HM and MKL **scatter warm orange across the whole frame**.
-- **Velum gathers the warm light precisely at the central light source** and keeps the surroundings calm and blue — the same composition as the reference.
-
-**⑥ `0284_sky`: a sky gradient is the acid test for banding.**
-The source is a city dusk sky; the reference's dominant colour is vivid red.
-- With debanding off, faint **stair-stepping** is visible in Velum's sky; with **auto debanding** on, the gradient becomes **smooth**, while the bridge lines stay sharp.
-- HM-MKL-HM, by contrast, shows **abrupt cyan patches** in the sky — the textbook banding that a narrowed CDF produces.
-
-### An honest observation
-
-Velum isn't "the most striking" in every single panel. In cases like `exposure` and `sakura`, where **source and reference are already close**, all five algorithms land near each other — which is how it should be. Good colour transfer should hold back when things are already similar, not manufacture change.
-
-Velum pulls ahead when **the reference differs strongly from the source, or different colours need to go to different places**. The trade-off is explicit: it usually takes several times as long as the classic methods (see each panel label), and more with debanding on. For work that needs to be controllable and not go wrong, that's worth it.
-
----
 
 ## What the console can do
-
+[![Web console interface](./docs/webui.png)](./docs/webui.png)
 - **Three view modes**: single output / six-panel comparison / A-B comparison.
 - **Layer blending** (Photoshop-style, stacked bottom to top):
   - **Luminosity match** — hand the source's light-and-dark relationships back
