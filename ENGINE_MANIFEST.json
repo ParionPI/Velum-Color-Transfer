@@ -1,0 +1,127 @@
+{
+  "version": "4.10",
+  "parent": "4.09",
+  "files": [
+    {
+      "path": "__init__.py",
+      "source_sha256": "59c964af59723cdec892f62abb44428f13122b3c5ce0b6743922eb955c4eb524",
+      "bundled_sha256": "fd18fcdef03b059696dd234e81d5379f357d36431c4ec2d01746bbe5885e5d90"
+    },
+    {
+      "path": "__main__.py",
+      "source_sha256": "9a16757d67f32f4695525c058014cca2029d1f90ac23187e46d94e0970c4ba8a",
+      "bundled_sha256": "9a16757d67f32f4695525c058014cca2029d1f90ac23187e46d94e0970c4ba8a"
+    },
+    {
+      "path": "appearance.py",
+      "source_sha256": "3ca0f8b5fb849858d13b5361236c6975d3b991fb01767074d69f918bd235b67f",
+      "bundled_sha256": "3ca0f8b5fb849858d13b5361236c6975d3b991fb01767074d69f918bd235b67f"
+    },
+    {
+      "path": "color.py",
+      "source_sha256": "49f1827a0569c37536b77ae0d1067e925610870b555cfc6d7d909dc0207b1cd7",
+      "bundled_sha256": "49f1827a0569c37536b77ae0d1067e925610870b555cfc6d7d909dc0207b1cd7"
+    },
+    {
+      "path": "core.py",
+      "source_sha256": "6762cda05256552f4d7fc85f87419949760576f277997d23664ccc09450c347a",
+      "bundled_sha256": "6762cda05256552f4d7fc85f87419949760576f277997d23664ccc09450c347a"
+    },
+    {
+      "path": "deband.py",
+      "source_sha256": "7cf30eca2cb8fc44a9c713249d8bdb7053d1da23745fbd6fe5ffd5c84af73c5d",
+      "bundled_sha256": "7cf30eca2cb8fc44a9c713249d8bdb7053d1da23745fbd6fe5ffd5c84af73c5d"
+    },
+    {
+      "path": "distribution.py",
+      "source_sha256": "57315d8499b574d8957ea616ef0aa7c1b2c8d6e131182bfe3e310edc1993e0f7",
+      "bundled_sha256": "57315d8499b574d8957ea616ef0aa7c1b2c8d6e131182bfe3e310edc1993e0f7"
+    },
+    {
+      "path": "fast_sort.py",
+      "source_sha256": "8a1682f01793b31a5972012fd44bc1bf24f2fd6358fd4986dc9b98dcb119c5a0",
+      "bundled_sha256": "8a1682f01793b31a5972012fd44bc1bf24f2fd6358fd4986dc9b98dcb119c5a0"
+    },
+    {
+      "path": "gpu_decode.py",
+      "source_sha256": "922bc9217cd6098e5ffe830f0e45f21fd1c5b7ef1a10e896b690676bde06f950",
+      "bundled_sha256": "922bc9217cd6098e5ffe830f0e45f21fd1c5b7ef1a10e896b690676bde06f950"
+    },
+    {
+      "path": "gpu_mapping.py",
+      "source_sha256": "9dd865d6531d748dba5943dedb7ae852917b36137a1295c4c6382e887f47e84a",
+      "bundled_sha256": "9dd865d6531d748dba5943dedb7ae852917b36137a1295c4c6382e887f47e84a"
+    },
+    {
+      "path": "io.py",
+      "source_sha256": "d211b98b8824e6200934f1da3ba232c0a0016796a5a66cbcf06faf5333d683ac",
+      "bundled_sha256": "d211b98b8824e6200934f1da3ba232c0a0016796a5a66cbcf06faf5333d683ac"
+    },
+    {
+      "path": "legacy25\\__init__.py",
+      "source_sha256": "6ef934c92c110eb3a1711f472de86590965e366771b1bd2d01640c4c08a02c16",
+      "bundled_sha256": "6ef934c92c110eb3a1711f472de86590965e366771b1bd2d01640c4c08a02c16"
+    },
+    {
+      "path": "legacy25\\auto_score.py",
+      "source_sha256": "08a46a272a3a08e45d4aebb71830ea65c12da0a2b255d1b2d68f0b8d2d6c4170",
+      "bundled_sha256": "0d7fb47e5126790b3703c51b31eb8dd83bd157c579eedcad5ecb2ed28c032efa",
+      "before_hotfix_sha256": "08a46a272a3a08e45d4aebb71830ea65c12da0a2b255d1b2d68f0b8d2d6c4170",
+      "hotfix": "numpy_scorer_r1: no JIT dispatcher; preallocated NumPy scratch"
+    },
+    {
+      "path": "legacy25\\continuous_mapping.py",
+      "source_sha256": "4ad9276125be770bb3af9fdcfb665635a9ccef17c63c407fde275c728982d96b",
+      "bundled_sha256": "698fe7737fb0f9145c0c5fdcfcf37e480551cdd230096d38646294c09ff701fa",
+      "before_hotfix_sha256": "4ad9276125be770bb3af9fdcfb665635a9ccef17c63c407fde275c728982d96b",
+      "hotfix": "numpy_scorer_r1: no JIT dispatcher; preallocated NumPy scratch"
+    },
+    {
+      "path": "legacy25\\cuda_kernels.py",
+      "source_sha256": "5cdb7f60af2186d15e997588a16105d11011b1b5f0b42ce9599c2324856d3d17",
+      "bundled_sha256": "5cdb7f60af2186d15e997588a16105d11011b1b5f0b42ce9599c2324856d3d17"
+    },
+    {
+      "path": "legacy25\\evaluation_features.py",
+      "source_sha256": "9c711a32b960d45dbf3e7e3dbca47772233a9938dc2e68b4747ebbc8a100ff03",
+      "bundled_sha256": "9c711a32b960d45dbf3e7e3dbca47772233a9938dc2e68b4747ebbc8a100ff03"
+    },
+    {
+      "path": "legacy25\\oklab.py",
+      "source_sha256": "1bd3c46a8a20a7ae8f520726b2d05f2d156383be8995d7c14a448678452c3bbb",
+      "bundled_sha256": "1bd3c46a8a20a7ae8f520726b2d05f2d156383be8995d7c14a448678452c3bbb"
+    },
+    {
+      "path": "local_support.py",
+      "source_sha256": "938ea9dc70799cbb81805dd9233af7206313cd7e71018446b72c6125fa63300a",
+      "bundled_sha256": "938ea9dc70799cbb81805dd9233af7206313cd7e71018446b72c6125fa63300a"
+    },
+    {
+      "path": "quantile.py",
+      "source_sha256": "82e8ea872bd4f573e8666eb2b3110e90721c8107d65d5e7ae3ab688b475bf9e1",
+      "bundled_sha256": "82e8ea872bd4f573e8666eb2b3110e90721c8107d65d5e7ae3ab688b475bf9e1"
+    },
+    {
+      "path": "relative.py",
+      "source_sha256": "1a902c06887a418e1b1a813290daaeb6fe9ea9163e888b36a4c25a0650da53ff",
+      "bundled_sha256": "1a902c06887a418e1b1a813290daaeb6fe9ea9163e888b36a4c25a0650da53ff"
+    },
+    {
+      "path": "solver.py",
+      "source_sha256": "c3c30dd89f85da3dc370eebadceb90dea30683f00d3e0fb1721694a908468851",
+      "bundled_sha256": "c3c30dd89f85da3dc370eebadceb90dea30683f00d3e0fb1721694a908468851"
+    },
+    {
+      "path": "support.py",
+      "source_sha256": "23233297bbb50f0ac4480d54ebe6046ad6e1f52e50e77c51d15fa5c5487a474b",
+      "bundled_sha256": "23233297bbb50f0ac4480d54ebe6046ad6e1f52e50e77c51d15fa5c5487a474b"
+    },
+    {
+      "path": "verify.py",
+      "source_sha256": "2b896abc1cc815fd210290d440e7712c933f90783442b0131304740e319fe41f",
+      "bundled_sha256": "2b896abc1cc815fd210290d440e7712c933f90783442b0131304740e319fe41f"
+    }
+  ],
+  "stability_revision": "numpy_scorer_r1",
+  "node_package_version": "4.10.1"
+}

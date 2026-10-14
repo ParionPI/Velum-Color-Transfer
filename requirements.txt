@@ -1,0 +1,10 @@
+# Torch and Pillow are provided by ComfyUI: never replace Torch for this node.
+# Compatible ranges for the currently verified embedded Python environment.
+numpy>=1.26,<2.2
+scipy>=1.11,<1.16
+# >=0.62 required to stay compatible with was-node-suite-comfyui (numba>=0.62).
+# Velum only uses the stable njit/prange/get_num_threads/set_num_threads APIs,
+# verified working on the installed numba 0.64.0.
+numba>=0.62,<0.65
+colour-science>=0.4.6,<0.4.7
+opencv-python>=4.8,<4.12

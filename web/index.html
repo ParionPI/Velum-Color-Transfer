@@ -1,0 +1,2184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VELUM 4.10 调色台 · 色彩匹配工作台</title>
+<link rel="icon" type="image/png" sizes="any" href="/velum_icon.png?v=2">
+<link rel="shortcut icon" type="image/png" href="/velum_icon.png?v=2">
+<style>
+:root {
+  --bg: #12141a; --panel: #1a1d26; --panel2: #222634;
+  --line: #2e3344; --text: #d8dbe4; --dim: #8a90a3;
+  --acc: #6c8cff; --ok: #4caf7d; --warn: #e0a458; --bad: #e06c6c;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:var(--bg); color:var(--text); font:14px/1.5 "Segoe UI",system-ui,sans-serif; }
+header { display:flex; align-items:center; gap:14px; padding:14px 22px; border-bottom:1px solid var(--line); }
+header h1 { font-size:17px; font-weight:600; }
+header .sub { color:var(--dim); font-size:12px; }
+header .spacer { flex:1; }
+.badge { font-size:11px; padding:3px 9px; border-radius:10px; background:var(--panel2); border:1px solid var(--line); color:var(--dim); }
+/* Layout: inputs column (source above reference) | result column (largest) |
+   params column.  Width ratio result:source:reference = 4:1:1, so the two
+   input tiles share one column that is 1/4 the width of the result column. */
+main { display:flex; gap:16px; padding:16px 22px; align-items:flex-start; flex-wrap:wrap; }
+.inputs-col { flex:1 1 0; min-width:150px; display:flex; flex-direction:column; gap:12px; }
+.center { flex:4 1 0; min-width:420px; }     /* 4x the width of inputs-col */
+.right { flex:0 0 340px; }
+
+/* upload area: two stacked tiles, each keeps a natural aspect box */
+.upload { border:1px dashed var(--line); border-radius:10px; padding:10px; background:var(--panel); cursor:pointer; transition:border .15s; }
+.upload:hover, .upload.drag { border-color:var(--acc); }
+.upload .cap { font-size:11px; color:var(--dim); margin-bottom:6px; display:flex; justify-content:space-between; }
+.upload .cap b { color:var(--text); }
+.upload .thumb { width:100%; height:150px; object-fit:contain; background:#0d0f14; border-radius:6px; display:block; }
+.upload .empty { width:100%; height:150px; display:flex; align-items:center; justify-content:center; color:var(--dim); font-size:12px; background:#0d0f14; border-radius:6px; }
+.hint { font-size:11px; color:var(--dim); margin:-4px 0 12px; }
+.flash { position:fixed; top:14px; left:50%; transform:translateX(-50%);
+  background:var(--ok); color:#fff; padding:8px 18px; border-radius:8px;
+  font-size:13px; opacity:0; transition:opacity .3s; z-index:99;
+  box-shadow:0 4px 14px rgba(0,0,0,.4); pointer-events:none; }
+
+/* persistent, copy-friendly error dialog (for failures worth debugging) */
+.errdlg { border:none; border-radius:12px; padding:0; max-width:560px; width:80vw;
+  background:var(--panel,#1b1b1f); color:var(--text,#eee);
+  box-shadow:0 12px 48px rgba(0,0,0,.6); }
+.errdlg::backdrop { background:rgba(0,0,0,.55); }
+.errdlg-title { font-size:15px; font-weight:600; color:var(--bad,#e5534b);
+  padding:16px 20px 10px; }
+.errdlg-body { margin:0; padding:0 20px 14px; font-size:12.5px; line-height:1.6;
+  white-space:pre-wrap; word-break:break-word; color:var(--text,#ddd);
+  max-height:50vh; overflow:auto; font-family:inherit; }
+.errdlg-actions { display:flex; justify-content:flex-end; gap:8px;
+  padding:10px 16px 16px; }
+.errdlg-btn { border:1px solid var(--line,#3a3a40); background:transparent;
+  color:var(--text,#ddd); border-radius:7px; padding:6px 16px; font-size:12.5px;
+  cursor:pointer; }
+.errdlg-btn:hover { border-color:var(--acc,#8ab4f8); }
+.errdlg-btn-primary { background:var(--acc,#8ab4f8); border-color:var(--acc,#8ab4f8);
+  color:#0c0c0f; font-weight:600; }
+.errdlg-btn[disabled] { opacity:.55; cursor:not-allowed; }
+
+/* result */
+.resultbox { border:1px solid var(--line); border-radius:10px; background:var(--panel); padding:12px; }
+.resultbox .head { display:flex; align-items:center; margin-bottom:8px; gap:10px; }
+.resultbox .head h2 { font-size:14px; }
+.resultbox .head .stat { font-size:11px; color:var(--dim); }
+.resultbox img { width:100%; border-radius:6px; background:#0d0f14; }
+#result { min-height:200px; object-fit:contain; }
+.wait { opacity:.45; pointer-events:none; }
+
+/* ---- A/B split comparison ---- */
+.abbox { margin-top:10px; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#0d0f14; }
+/* the wrapper's height comes from a spacer img in normal flow (abSpacer), so it
+   never collapses even before aspect-ratio is known; the two compared images are
+   absolutely positioned on top of it. */
+.abwrap { position:relative; width:100%; min-height:120px; user-select:none; -webkit-user-select:none; line-height:0; }
+.abspacer { width:100%; height:auto; display:block; opacity:0; }   /* sets height only */
+.abimg { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:contain; display:block; }
+.abtop { clip-path: inset(0 0 0 var(--abpos,50%)); }   /* default: right side visible */
+.abdiv { position:absolute; top:0; bottom:0; left:var(--abpos,50%); width:2px; margin-left:-1px; z-index:5;
+         background:#fff; box-shadow:0 0 6px rgba(0,0,0,.8); cursor:ew-resize; touch-action:none; }
+.abknob { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+          width:22px; height:36px; border-radius:6px; background:#fff;
+          box-shadow:0 1px 6px rgba(0,0,0,.6); display:flex; align-items:center; justify-content:center;
+          color:#111; font-size:11px; font-weight:700; letter-spacing:1px; }
+.abknob::before { content:"◄"; margin-right:3px; }
+.abknob::after { content:"►"; margin-left:3px; }
+.ablabel { position:absolute; top:8px; z-index:6; font-size:11px; font-weight:600; padding:2px 8px; border-radius:4px;
+           background:rgba(0,0,0,.55); color:#fff; pointer-events:none; }
+.abl { left:10px; } .abr { right:10px; }
+.abbar { display:flex; align-items:center; gap:8px; padding:6px 10px; border-top:1px solid var(--line); background:var(--panel); }
+.abbar .stat { font-size:11px; color:var(--dim); }
+.abbar .mode { gap:6px; }
+/* live-refresh state: only nudge the images' opacity, keep the divider/toolbar
+   fully interactive so a slider drag can keep updating without a jarring dim */
+.abbox.wait { opacity:1; pointer-events:auto; }
+.abbox.wait .abimg { opacity:.6; transition:opacity .1s; }
+.absel { background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:6px; padding:3px 6px; font-size:12px; cursor:pointer; }
+
+/* view-mode segmented control (六格对比 / AB 对比 — pick exactly one) */
+.segmented { display:inline-flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; }
+.segmented .seg { border:none; border-radius:0; background:var(--panel2); color:var(--dim);
+  padding:5px 12px; font-size:12px; cursor:pointer; transition:background .12s,color .12s; }
+.segmented .seg + .seg { border-left:1px solid var(--line); }
+.segmented .seg.on { background:var(--acc); color:#fff; }
+.segmented .seg:not(.on):hover { background:#2b3042; color:var(--text); }
+
+/* audit grid */
+.audit { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px; }
+.metric { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:7px 9px; }
+.metric .k { font-size:10px; color:var(--dim); text-transform:uppercase; letter-spacing:.04em; }
+.metric .v { font-size:14px; font-weight:600; margin-top:2px; }
+.metric .v.good { color:var(--ok); } .metric .v.warn { color:var(--warn); } .metric .v.bad { color:var(--bad); }
+
+/* params */
+.right h3 { font-size:13px; margin:14px 0 8px; color:var(--dim); text-transform:uppercase; letter-spacing:.06em; }
+.pgroup { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; }
+.param { margin-bottom:10px; }
+.param:last-child { margin-bottom:0; }
+.param .row { display:flex; justify-content:space-between; font-size:12px; }
+.param .row .name { color:var(--text); }
+.param .row .val { color:var(--acc); font-variant-numeric:tabular-nums; }
+.param input[type=range] { width:100%; margin-top:4px; accent-color:var(--acc); }
+.param input[type=checkbox] { accent-color:var(--acc); }
+.param .desc { font-size:10.5px; color:var(--dim); margin-top:2px; }
+
+.actions { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+button { border:1px solid var(--line); background:var(--panel2); color:var(--text); border-radius:8px; padding:8px 14px; font-size:13px; cursor:pointer; transition:background .12s; }
+button:hover { background:#2b3042; }
+button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+button.primary:hover { background:#5f7ff0; }
+button.small { padding:5px 10px; font-size:12px; }
+.mode { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--dim); cursor:pointer; }
+.mode input { accent-color:var(--acc); cursor:pointer; }
+.autonote { font-size:11px; color:var(--dim); margin:8px 2px 0; line-height:1.5; }
+.autonote b { color:var(--acc); }
+.adv { margin-top:10px; }
+.adv summary { font-size:12px; color:var(--dim); cursor:pointer; padding:6px 0; user-select:none; }
+.adv summary:hover { color:var(--text); }
+.adv[open] summary { color:var(--text); margin-bottom:2px; }
+footer { padding:10px 22px; color:var(--dim); font-size:11px; border-top:1px solid var(--line); margin-top:10px; }
+
+/* progress bar */
+.progress-wrap { width:100%; height:3px; background:var(--line); border-radius:2px; margin:8px 0 0; overflow:hidden; }
+.progress-bar { height:100%; width:0%; background:var(--acc); border-radius:2px;
+  transition:width .12s linear; }
+/* 'done' no longer hides the bar -- collapsing it changed the column height and
+   shifted the result image on every render. The wrap keeps its 3px track; the
+   bar just empties to 0%, so the layout is stable across renders. */
+.progress-wrap.done { }
+.progress-stage { font-size:11px; color:var(--dim); min-height:14px; margin-top:3px;
+  font-variant-numeric:tabular-nums; }
+/* indeterminate bounce while waiting (when we have no real %) */
+@keyframes prog-bounce { 0%{left:-35%;width:35%} 60%{left:100%;width:35%} 100%{left:100%;width:0} }
+.progress-bar.indeterminate { position:relative; animation:prog-bounce 1.1s ease infinite; left:0; width:35% !important; }
+
+/* ========================================================================== */
+/* 2026 editorial redesign — warm, minimal, wide-screen first                 */
+/*                                                                           */
+/* Visual references: warm ivory paper, charcoal type, mustard accents,       */
+/* peach/sage secondary tones, generous whitespace and almost no hard frames. */
+/* All legacy selectors and DOM ids remain intact; this layer is visual only. */
+/* ========================================================================== */
+:root {
+  --bg:#feeede;
+  --panel:#feeede;
+  --panel2:rgba(239,226,211,.75);
+  --line:rgba(74,68,60,.14);
+  --text:#514b45;
+  --dim:#8d8479;
+  --acc:#b5a102;
+  --acc-soft:#e9d34b;
+  --peach:#f9b998;
+  --sage:#aeb892;
+  --blue:#8ababc;
+  --ok:#79885d;
+  --warn:#b98435;
+  --bad:#bd6557;
+  --ink:#37342f;
+  --canvas:rgba(239,226,211,.75);
+  --frame:rgba(239,226,211,.75);
+  --range-rest:rgba(138,186,188,.75);
+  --acc-contrast:#fffdf3;
+}
+
+/* Register theme colours so browsers can interpolate custom properties instead
+   of snapping between palettes. All consuming UI surfaces transition together. */
+@property --bg { syntax:"<color>"; inherits:true; initial-value:#feeede; }
+@property --panel { syntax:"<color>"; inherits:true; initial-value:#feeede; }
+@property --frame { syntax:"<color>"; inherits:true; initial-value:rgba(239,226,211,.75); }
+@property --panel2 { syntax:"<color>"; inherits:true; initial-value:rgba(239,226,211,.75); }
+@property --canvas { syntax:"<color>"; inherits:true; initial-value:rgba(239,226,211,.75); }
+@property --text { syntax:"<color>"; inherits:true; initial-value:#514b45; }
+@property --ink { syntax:"<color>"; inherits:true; initial-value:#37342f; }
+@property --dim { syntax:"<color>"; inherits:true; initial-value:rgba(55,52,47,.5); }
+@property --line { syntax:"<color>"; inherits:true; initial-value:rgba(74,68,60,.14); }
+@property --acc { syntax:"<color>"; inherits:true; initial-value:#b5a102; }
+@property --range-rest { syntax:"<color>"; inherits:true; initial-value:rgba(138,186,188,.75); }
+@property --acc-contrast { syntax:"<color>"; inherits:true; initial-value:#fffdf3; }
+
+html,body,header,main,.upload .thumb,.upload .empty,.resultbox > #result,
+.abbox,.abbar,.segmented,.segmented .seg,button,.actions,
+.param,.param .name,.param .val,.param .desc,.hint,
+.progress-stage,.palette-head,header h1 {
+  transition:background-color .5s ease,color .5s ease,border-color .5s ease,
+             box-shadow .5s ease,opacity .5s ease;
+}
+
+html { background:var(--bg); }
+body {
+  min-height:100vh;
+  overflow-x:hidden;
+  background:var(--bg);
+  color:var(--text);
+  font-family:"Avenir Next","Helvetica Neue","Segoe UI",system-ui,-apple-system,sans-serif;
+  font-size:13px;
+  line-height:1.45;
+  letter-spacing:.005em;
+  -webkit-font-smoothing:antialiased;
+}
+
+header {
+  height:92px;
+  max-width:1920px;
+  margin:0 auto;
+  padding:17px clamp(24px,3vw,58px) 13px;
+  gap:16px;
+  border:0;
+  position:relative;
+}
+header::after {
+  content:"";
+  position:absolute;
+  left:clamp(24px,3vw,58px);
+  right:clamp(24px,3vw,58px);
+  bottom:0;
+  height:1px;
+  background:rgba(76,72,66,.12);
+}
+header h1 {
+  position:absolute;
+  left:50%;
+  top:50%;
+  width:clamp(240px,21vw,390px);
+  height:58px;
+  margin:0;
+  transform:translate(-50%,-54%);
+  overflow:hidden;
+  font-size:0;
+  line-height:0;
+  pointer-events:none;
+}
+header h1 img {
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+}
+@supports ((-webkit-mask:url("velum-title-warm.png")) or (mask:url("velum-title-warm.png"))) {
+  header h1 {
+    background:var(--acc);
+    -webkit-mask:url("velum-title-warm.png") center / contain no-repeat;
+    mask:url("velum-title-warm.png") center / contain no-repeat;
+  }
+  header h1 img { opacity:0; }
+}
+header .sub {
+  color:var(--dim);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+}
+.badge {
+  padding:4px 0;
+  border:0;
+  border-radius:0;
+  background:none;
+  color:var(--dim);
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:.07em;
+}
+.badge + .badge { margin-left:12px; }
+
+/* Header skin switch: colour-only presets; layout never changes. */
+.skin-switch {
+  display:inline-flex;
+  align-items:center;
+  gap:2px;
+  padding:3px;
+  border-radius:12px;
+  background:var(--frame);
+}
+.skin-switch button {
+  min-width:40px;
+  padding:4px 8px;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  color:var(--dim);
+  font-size:9px;
+  font-weight:700;
+  letter-spacing:.04em;
+}
+.skin-switch button.on {
+  background:var(--acc);
+  color:var(--acc-contrast);
+}
+
+main {
+  width:min(100%,1920px);
+  min-height:calc(100vh - 126px);
+  margin:0 auto;
+  padding:20px clamp(24px,3vw,58px) 28px;
+  display:grid;
+  grid-template-columns:minmax(165px,.92fr) minmax(560px,3.68fr) minmax(292px,1.36fr);
+  gap:clamp(18px,1.7vw,34px);
+  align-items:start;
+}
+
+/* Inputs read as a narrow editorial film strip, not two form cards. */
+.inputs-col {
+  min-width:0;
+  height:calc(100vh - 148px);
+  display:grid;
+  grid-template-rows:minmax(0,1fr) minmax(0,1fr) auto;
+  gap:18px;
+}
+.upload {
+  min-height:0;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  display:flex;
+  flex-direction:column;
+  cursor:pointer;
+}
+.upload:hover,
+.upload.drag { border:0; }
+.upload .cap {
+  min-height:25px;
+  margin:0 0 10px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+  line-height:1.1;
+  letter-spacing:-.025em;
+  text-transform:none;
+}
+.upload .cap b {
+  color:var(--dim);
+  font-size:9px;
+  font-family:"Avenir Next","Helvetica Neue","Segoe UI",system-ui,sans-serif;
+  font-weight:600;
+  letter-spacing:.12em;
+  text-transform:uppercase;
+}
+.upload .thumb,
+.upload .empty {
+  flex:1;
+  min-height:0;
+  width:100%;
+  height:auto;
+  border:0;
+  border-radius:14px;
+  background:var(--frame);
+  color:var(--dim);
+  object-fit:contain;
+  transition:transform .22s ease,background .22s ease;
+}
+.upload:hover .thumb,
+.upload:hover .empty,
+.upload.drag .empty { background:color-mix(in srgb,var(--frame) 86%,var(--ink)); transform:translateY(-2px); }
+.upload .empty {
+  padding:20px;
+  text-align:center;
+  font-size:11px;
+  line-height:1.7;
+}
+.hint {
+  margin:0;
+  color:var(--dim);
+  font-size:9px;
+  line-height:1.55;
+  letter-spacing:.04em;
+}
+
+.center { min-width:0; }
+.resultbox {
+  min-height:calc(100vh - 148px);
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  display:flex;
+  flex-direction:column;
+}
+.resultbox .head {
+  min-height:39px;
+  margin:0 0 10px;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.resultbox .head h2 {
+  margin-right:5px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+  letter-spacing:-.025em;
+}
+.resultbox .head .stat { color:var(--dim); font-size:10px; }
+.resultbox > #result {
+  flex:1;
+  width:100%;
+  min-height:420px;
+  max-height:calc(100vh - 198px);
+  border-radius:16px;
+  background:var(--frame);
+  object-fit:contain;
+}
+
+/* Quiet tool chrome: no boxes until there is a real action/state. */
+.mode { color:var(--dim); font-size:10px; font-weight:600; letter-spacing:.035em; }
+.absel,
+.ptext {
+  padding:5px 24px 5px 9px;
+  border:0;
+  border-radius:8px;
+  outline:none;
+  background:var(--panel2);
+  color:var(--ink);
+  font:600 10px/1.4 inherit;
+}
+.segmented {
+  padding:3px;
+  border:0;
+  border-radius:11px;
+  overflow:visible;
+  background:var(--frame);
+  gap:2px;
+}
+.segmented .seg {
+  padding:5px 11px;
+  border:0 !important;
+  border-radius:8px;
+  background:transparent;
+  color:var(--dim);
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.025em;
+}
+.segmented .seg.on {
+  background:var(--acc);
+  color:var(--acc-contrast);
+  box-shadow:none;
+}
+.segmented .seg:not(.on):hover { background:color-mix(in srgb,var(--frame) 82%,white); color:var(--ink); }
+
+button {
+  padding:7px 13px;
+  border:0;
+  border-radius:10px;
+  background:var(--panel2);
+  color:var(--ink);
+  font-size:11px;
+  font-weight:650;
+  letter-spacing:.02em;
+  transition:transform .15s ease,background .15s ease,color .15s ease;
+}
+button:hover { background:color-mix(in srgb,var(--frame) 82%,var(--ink)); transform:translateY(-1px); }
+button.primary {
+  background:var(--acc);
+  color:var(--acc-contrast);
+}
+button.primary:hover { background:color-mix(in srgb,var(--acc) 86%,var(--ink)); }
+button.small { padding:6px 10px; font-size:10px; }
+
+/* A/B comparison belongs to the canvas, not to another framed panel. */
+.abbox {
+  flex:1;
+  min-height:420px;
+  margin:0;
+  border:0;
+  border-radius:16px;
+  overflow:hidden;
+  background:var(--frame);
+}
+.abwrap { min-height:360px; }
+.abdiv { width:1px; background:#fffdf3; box-shadow:0 0 0 1px rgba(55,52,47,.22); }
+.abknob {
+  width:24px;
+  height:40px;
+  border-radius:14px;
+  background:#fff8ef;
+  color:var(--ink);
+  box-shadow:0 5px 18px rgba(75,60,45,.18);
+}
+.ablabel {
+  top:12px;
+  padding:4px 9px;
+  border-radius:20px;
+  background:rgba(249,238,226,.88);
+  color:var(--ink);
+  font-size:9px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  backdrop-filter:blur(8px);
+}
+.abbar {
+  min-height:42px;
+  padding:6px 11px;
+  border:0;
+  background:var(--frame);
+}
+
+/* Right rail: typography and rhythm create grouping; frames are removed. */
+.right {
+  min-width:0;
+  max-height:calc(100vh - 129px);
+  overflow:auto;
+  padding:0 5px 26px 0;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(74,68,60,.22) transparent;
+}
+.right::-webkit-scrollbar { width:5px; }
+.right::-webkit-scrollbar-thumb { border-radius:4px; background:rgba(74,68,60,.22); }
+.right h3 {
+  margin:3px 0 13px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:22px;
+  font-weight:500;
+  letter-spacing:-.015em;
+  text-transform:none;
+}
+.pgroup {
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+}
+.layer-controls { margin-bottom:9px; }
+.layer-title-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding:3px 0 8px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:15px;
+}
+.link-toggle {
+  min-width:30px;
+  padding:3px 6px;
+  border:0;
+  background:transparent;
+  color:var(--dim);
+  filter:saturate(0);
+  font-size:14px;
+  line-height:1;
+}
+.link-toggle svg { display:block; }
+.link-toggle.on {
+  background:transparent;
+  color:var(--acc);
+  filter:saturate(1.5);
+}
+.param {
+  margin:0;
+  padding:11px 0 13px;
+  border-bottom:1px solid rgba(76,72,66,.11);
+}
+.param .row { align-items:baseline; font-size:11px; }
+.param .row .name { color:var(--ink); font-weight:650; }
+.param .row .val { color:var(--acc); font-size:10px; font-weight:750; }
+.param .desc { margin-top:4px; color:var(--dim); font-size:9px; line-height:1.55; }
+.param .desc { display:none; }
+
+.result-stage {
+  flex:1;
+  min-height:420px;
+  position:relative;
+  display:flex;
+  align-items:stretch;
+  overflow:hidden;
+  border-radius:16px;
+  background:var(--frame);
+}
+.result-stage > #result {
+  flex:1;
+  width:100%;
+  min-height:420px;
+  max-height:calc(100vh - 198px);
+  border-radius:16px;
+  background:transparent;
+  object-fit:contain;
+}
+.result-empty {
+  position:absolute;
+  inset:0;
+  z-index:2;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:var(--ink);
+  opacity:.55;
+  font-size:34px;
+  font-weight:800;
+  letter-spacing:.02em;
+  pointer-events:none;
+}
+.result-empty[hidden],
+.result-stage > #result[hidden] {
+  display:none !important;
+}
+.param input[type=range] {
+  width:100%;
+  height:18px;
+  margin-top:10px;
+  border:0;
+  outline:none;
+  appearance:none;
+  -webkit-appearance:none;
+  background:linear-gradient(to right,
+    var(--acc) 0 var(--range-pct,50%),
+    var(--range-rest) var(--range-pct,50%) 100%);
+  background-size:100% 3px;
+  background-repeat:no-repeat;
+  background-position:center;
+  accent-color:var(--acc);
+  cursor:pointer;
+}
+.param input[type=range]::-webkit-slider-runnable-track {
+  height:3px;
+  border:0;
+  border-radius:0;
+  background:linear-gradient(to right,
+    var(--acc) 0 var(--range-pct,50%),
+    var(--range-rest) var(--range-pct,50%) 100%);
+}
+.param input[type=range]::-webkit-slider-thumb {
+  width:14px;
+  height:14px;
+  margin-top:-5.5px;
+  border:0;
+  border-radius:50%;
+  appearance:none;
+  -webkit-appearance:none;
+  background:var(--acc);
+  box-shadow:none;
+}
+.param input[type=range]::-moz-range-track {
+  height:3px;
+  border:0;
+  background:linear-gradient(to right,
+    var(--acc) 0 var(--range-pct,50%),
+    var(--range-rest) var(--range-pct,50%) 100%);
+}
+.param input[type=range]::-moz-range-thumb {
+  width:14px;
+  height:14px;
+  border:0;
+  border-radius:50%;
+  background:var(--acc);
+}
+.param input[type=checkbox] { accent-color:var(--acc); }
+.autonote {
+  margin:11px 0 16px;
+  color:var(--dim);
+  font-size:9px;
+  line-height:1.6;
+}
+.autonote b { color:var(--acc); }
+.adv { margin-top:12px; border-top:1px solid rgba(76,72,66,.11); }
+.adv summary {
+  padding:14px 0 8px;
+  color:var(--ink);
+  font-family:Georgia,"Times New Roman",serif;
+  font-size:15px;
+}
+.adv summary:hover,
+.adv[open] summary { color:var(--acc); }
+.actions {
+  position:sticky;
+  bottom:-1px;
+  z-index:4;
+  margin-top:18px;
+  padding:12px 0 3px;
+  background:var(--bg);
+  gap:7px;
+}
+
+.progress-wrap {
+  height:2px;
+  margin:0 0 4px;
+  border-radius:0;
+  background:#e4d6c6;
+}
+.progress-bar { border-radius:0; background:var(--acc); }
+.progress-stage { min-height:16px; color:var(--dim); font-size:9px; }
+.audit { display:none; }
+
+/* Dominant-colour distribution of the current VELUM result. Segment width is
+   proportional to each cluster's share within the displayed Top-N palette. */
+.palette-wrap {
+  width:100%;
+  margin:0 0 12px;
+}
+.palette-head {
+  min-height:18px;
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  color:var(--dim);
+  font-size:9px;
+  font-weight:650;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+.palette-bar {
+  width:100%;
+  height:15px;
+  display:flex;
+  overflow:hidden;
+  border-radius:0;
+  background:var(--canvas);
+}
+.palette-swatch {
+  height:100%;
+  position:relative;
+  transition:flex-basis .24s ease;
+}
+.palette-swatch:hover::after {
+  content:attr(data-tip);
+  position:absolute;
+  left:50%;
+  bottom:calc(100% + 7px);
+  z-index:12;
+  transform:translateX(-50%);
+  padding:4px 7px;
+  border-radius:10px;
+  background:var(--ink);
+  color:#fff9ef;
+  font-size:9px;
+  line-height:1;
+  white-space:nowrap;
+  box-shadow:0 5px 18px rgba(55,52,47,.16);
+}
+
+.flash {
+  top:22px;
+  padding:8px 16px;
+  border-radius:18px;
+  background:var(--ink);
+  color:#fff9ef;
+  font-size:10px;
+  box-shadow:0 8px 30px rgba(55,52,47,.18);
+}
+
+footer {
+  display:none;
+  border:0;
+}
+
+/* 16:9-first: preserve the editorial composition down to laptop widths. */
+@media (max-width:1280px) {
+  main {
+    grid-template-columns:minmax(150px,.85fr) minmax(500px,3.6fr) minmax(270px,1.25fr);
+    gap:17px;
+  }
+  .resultbox .head { align-content:flex-start; }
+  .segmented .seg { padding:5px 8px; }
+}
+
+@media (max-width:1040px) {
+  main { grid-template-columns:170px minmax(0,1fr); }
+  .right { grid-column:1 / -1; max-height:none; overflow:visible; }
+  .inputs-col,.resultbox { height:auto; min-height:620px; }
+  .right #paramsMain { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 24px; }
+}
+
+@media (max-width:760px) {
+  header { padding-inline:18px; }
+  header h1 { width:238px; height:48px; }
+  header .sub,.badge { display:none; }
+  .skin-switch { margin-left:auto; }
+  main { display:block; padding:16px 18px 28px; }
+  .inputs-col { height:auto; grid-template-columns:1fr 1fr; grid-template-rows:auto auto; margin-bottom:20px; }
+  .inputs-col .hint { grid-column:1 / -1; }
+  .upload .thumb,.upload .empty { min-height:150px; }
+  .center { margin-bottom:25px; }
+  .resultbox { min-height:520px; }
+  .resultbox .head h2 { width:100%; }
+  .right #paramsMain { display:block; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1 aria-label="VELUM调色台"><img src="velum-title-warm.png" alt="VELUM调色台"></h1>
+  <span class="sub">色彩匹配工作台4.10——你的配色很好，下一秒是我的了。</span>
+  <span class="spacer"></span>
+  <span class="badge" id="srcBadge">source: -</span>
+  <span class="badge" id="refBadge">reference: -</span>
+  <div class="skin-switch" id="skinSwitch" aria-label="页面皮肤">
+    <button type="button" data-skin="light">亮色</button>
+    <button type="button" data-skin="dark">暗色</button>
+    <button type="button" class="on" data-skin="magic">魔法</button>
+  </div>
+</header>
+
+<main>
+  <!-- ============ left column: source above reference (ratio 1) ============ -->
+  <div class="inputs-col">
+    <div class="upload" id="upSrc" tabindex="0">
+      <div class="cap">源图 <b>source</b></div>
+      <img class="thumb" id="srcThumb" style="display:none" alt="source">
+      <div class="empty" id="srcEmpty">拖入图片、Ctrl+V 粘贴 或 点击选择</div>
+      <input type="file" id="srcFile" accept="image/*" hidden>
+    </div>
+    <div class="upload" id="upRef" tabindex="0">
+      <div class="cap">色彩参考图 <b>reference</b></div>
+      <img class="thumb" id="refThumb" style="display:none" alt="reference">
+      <div class="empty" id="refEmpty">拖入图片、Ctrl+V 粘贴 或 点击选择</div>
+      <input type="file" id="refFile" accept="image/*" hidden>
+    </div>
+    <div class="hint">两张图均可随时替换 · 替换后自动重新出图</div>
+  </div>
+
+  <div class="flash" id="flash"></div>
+
+  <!-- Modal error dialog: used for failures the user should be able to READ and
+       copy, unlike the transient `flash` toast. -->
+  <dialog id="errDialog" class="errdlg">
+    <div class="errdlg-title" id="errDialogTitle">出错了</div>
+    <pre class="errdlg-body" id="errDialogBody"></pre>
+    <div class="errdlg-actions">
+      <button type="button" id="errDialogCopy" class="errdlg-btn">复制</button>
+      <button type="button" id="errDialogClose" class="errdlg-btn errdlg-btn-primary">关闭</button>
+    </div>
+  </dialog>
+
+  <!-- ============ center column: result, largest (ratio 4) ============ -->
+  <div class="center">
+    <div class="resultbox">
+      <div class="head">
+        <h2>匹配结果</h2>
+        <span class="stat" id="timeStat"></span>
+        <span style="flex:1"></span>
+        <label class="mode" title="出图分辨率档位：调参时选低档(360p/480p)出图更快，满意后拉高出成品。仅缩小不放大，档位高于原图=原图尺寸。">
+          分辨率
+          <select id="resSel" class="absel">
+            <option value="640">360p 最快</option>
+            <option value="854">480p</option>
+            <option value="1280" selected>720p</option>
+            <option value="1920">1080p</option>
+            <option value="3840">2160p</option>
+            <option value="0">原图 最慢</option>
+          </select>
+        </label>
+        <div class="segmented" id="viewMode" title="切换查看模式">
+          <button class="seg on" id="segSingle" data-mode="single">单独出图</button>
+          <button class="seg" id="segGrid" data-mode="grid">六格对比</button>
+          <button class="seg" id="segAb" data-mode="ab">AB 对比</button>
+        </div>
+        <button class="small" id="btnCompare">放大查看</button>
+        <button class="small" id="btnSave">下载结果</button>
+      </div>
+      <div class="progress-wrap done" id="progressWrap">
+        <div class="progress-bar indeterminate" id="progressBar"></div>
+      </div>
+      <div class="progress-stage" id="progressStage"></div>
+      <div class="palette-wrap" id="paletteWrap" hidden>
+        <div class="palette-head">
+          <span>匹配结果配色</span>
+          <span id="paletteCount"></span>
+        </div>
+        <div class="palette-bar" id="paletteBar"></div>
+      </div>
+      <div class="result-stage">
+        <img id="result" alt="" hidden>
+          <div class="result-empty" id="resultEmpty">请上传图片</div>
+      </div>
+      <div class="audit" id="audit"></div>
+
+      <!-- A/B split comparison: baseline (left) vs VELUM (right) -->
+      <div id="abbox" class="abbox" hidden>
+        <div class="abwrap" id="abwrap">
+          <img id="abSpacer" class="abspacer" alt="">
+          <img id="abBase" class="abimg" alt="baseline">
+          <img id="abVelum" class="abimg abtop" alt="VELUM">
+          <div class="abdiv" id="abDiv"><span class="abknob"></span></div>
+          <div class="ablabel abl" id="abL">baseline</div>
+          <div class="ablabel abr" id="abR">VELUM</div>
+        </div>
+        <div class="abbar">
+          <label class="mode" title="选择与 VELUM 对比的基线算法">
+            对比对象
+            <select id="abBaseSel" class="absel">
+              <option value="hm">hm-mkl-hm</option>
+              <option value="mkl">mkl</option>
+              <option value="reinhard">reinhard</option>
+              <option value="cube">cube 预览（导出 LUT）</option>
+              <option value="source">源图 source</option>
+            </select>
+          </label>
+          <span class="stat" id="abHint">拖动分割线左右对比，双击分割线切换方向</span>
+          <span style="flex:1"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== right: parameters ===================== -->
+  <div class="right">
+    <h3>常用参数</h3>
+    <!-- the only knob a user needs: everything else is inferred from the images -->
+    <div class="pgroup" id="paramsMain"></div>
+    <p class="autonote">CAM16 J 仅用于明度秩对应：源图最亮/次亮/暗部对应参考图相同分位的明度；不保留源图的绝对明度，也不做语义匹配。</p>
+
+    <div class="actions">
+      <button class="primary" id="btnApply">重新出图</button>
+      <button id="btnReset">重置默认</button>
+      <button id="btnClear">清空图片</button>
+      <button id="btnExportCube" disabled title="导出当前图片和图层设置为65³ sRGB .cube；空间去色带为近似">导出.cube</button>
+    </div>
+  </div>
+</main>
+
+<footer>velum · 耗时取决于图片与设备 · 所有处理在本地完成 · 支持 PNG/JPG/WebP</footer>
+
+<script>
+"use strict";
+
+const $ = id => document.getElementById(id);
+let source = null, reference = null;
+let busy = false;
+let srcFileData = null, refFileData = null;   // selected files (drag or click)
+let uploadGeneration = 0;
+let serverImageEpoch = null;
+
+/* ------------------------------------------------------------------ */
+/* parameter schema                                                    */
+/* ------------------------------------------------------------------ */
+// `main:true`  -> shown in the always-visible panel (the only user-facing knobs)
+const PARAMS = [
+  { key:"compute_backend", label:"计算设备", def:"auto", group:"总体", main:true, select:true,
+    options:[["auto","自动（优先 GPU）"],["cpu","CPU"],["gpu","GPU"]],
+    desc:"Velum 4.10：自动检测CUDA，加速全分辨率去色带映射和输出解码；不可用、显存不足或运行失败时回退CPU。CPU：禁用GPU；GPU：要求CUDA，不可用时明确报错。首次初始化可能较慢，常驻窗口后续出图可复用。实际设备见出图反馈。" },
+  { key:"deband_auto", label:"去色带自动推断", def:true, group:"总体", main:true, bool:true,
+    desc:"按源图结构与细节水平选择去色带强度，滑块回显本次实际求得值。使用4.10算法，不以完全消灭色带或贴近关闭状态为目标；开启去色带后不再额外重锁J明度秩。" },
+  { key:"deband_structure_field", label:"去色带区域算法", def:"gradient_energy", group:"总体", main:true, select:true,
+    options:[["gradient_energy","梯度能量（默认）"],["dog_guided","DoG 引导滤波"],["dog_raw","原始 DoG"]],
+    desc:"决定去色带如何区分平坦区域与纹理区域。梯度能量保持 Velum 原版行为；DoG 引导滤波使用边缘感知平滑后的高频残差；原始 DoG 保留最锐利的高频响应。" },
+  { key:"deband", label:"去色带（Velum 4.10）", min:0, max:1, step:0.01, def:1.00, group:"总体", main:true,
+    desc:"保护输出中对应源图的结构和纹理，不是锁住关闭去色带时的全图颜色。低能量区域允许合理平滑和过渡；连续保护权重不是二值分区。关闭自动后：0为精确旁路，1为最大强度。自动开启时滑块仅显示本次求得值。下方亮度、色彩及叠加图层仍在算法之后独立合成。" },
+];
+
+const DEFAULTS = Object.fromEntries(PARAMS.map(p => [p.key, p.def]));
+let values = {...DEFAULTS};
+let applyTimer = null;
+
+// Post-grade layer modulation. These values NEVER enter VelumParams or the
+// VELUM cache key; changing them only recomposes already-cached images.
+const LAYER_DEFAULTS = {
+  luma_match: 1.0,
+  color_match: 1.0,
+  linked: true,
+  overlay_amount: 0.0,
+  overlay_channel: "source",
+  overlay_mode: "overlay",
+};
+let layerValues = {...LAYER_DEFAULTS};
+let layerTimer = null;
+
+/* ------------------------------------------------------------------ */
+/* param panel                                                         */
+/* ------------------------------------------------------------------ */
+function formatVal(p) {
+  const v = values[p.key];
+  if (p.bool) return v ? "on" : "off";
+  if (p.select) {
+    const hit = (p.options || []).find(x => x[0] === v);
+    return hit ? hit[1] : v;
+  }
+  if (p.bipolar) {
+    if (Math.abs(v) < 1e-6) return "0";
+    return v < 0 ? ("平滑 " + Math.round(-v * 100) + "%")
+                 : ("激进 " + Math.round(v * 100) + "%");
+  }
+  return v;
+}
+
+function syncRangeVisual(input) {
+  if (!input || input.type !== "range") return;
+  const min = Number(input.min || 0), max = Number(input.max || 100);
+  const pct = max > min ? ((Number(input.value) - min) / (max - min)) * 100 : 0;
+  input.style.setProperty("--range-pct", Math.max(0, Math.min(100, pct)) + "%");
+}
+
+function makeParamEl(wrap, p) {
+  const el = document.createElement("div");
+  el.className = "param";
+  el.innerHTML = `
+    <div class="row">
+      <span class="name">${p.label}</span>
+      <span class="val" id="v_${p.key}"></span>
+    </div>
+    ${p.bool
+      ? `<input type="checkbox" id="i_${p.key}">`
+      : p.select
+        ? `<select id="i_${p.key}" class="absel">${(p.options || []).map(x => `<option value="${x[0]}">${x[1]}</option>`).join("")}</select>`
+      : p.text
+        ? `<input type="text" id="i_${p.key}" class="ptext" placeholder="${p.placeholder || ""}">`
+        : `<input type="range" id="i_${p.key}" min="${p.min}" max="${p.max}" step="${p.step}">`}
+    <div class="desc">${p.desc}</div>`;
+  wrap.appendChild(el);
+
+  const input = $("i_" + p.key);
+  const val = $("v_" + p.key);
+  const show = () => { val.textContent = p.text ? values[p.key] : formatVal(p); };
+  show();
+  if (p.bool) input.checked = !!values[p.key];
+  else if (p.text || p.select) input.value = values[p.key] || p.def || "";
+  else { input.value = values[p.key]; syncRangeVisual(input); }
+  input.addEventListener("input", () => {
+    values[p.key] = p.bool ? input.checked
+      : (p.text || p.select) ? input.value
+      : parseFloat(input.value);
+    show();
+    syncRangeVisual(input);
+    scheduleApply();
+  });
+
+  // While Auto is on the deband slider is a live readout of the solved value,
+  // not an editable request. Disabling avoids the misleading state where moving
+  // it appears to work but the server immediately replaces it with auto's answer.
+  if (p.key === "deband_auto") {
+    input.addEventListener("input", () => {
+      const slider = $("i_deband");
+      if (slider) slider.disabled = !!values.deband_auto;
+    });
+    const slider = $("i_deband");
+    if (slider) slider.disabled = !!values.deband_auto;
+  }
+  if (p.key === "deband") input.disabled = !!values.deband_auto;
+}
+
+function reflectDebandAudit(audit) {
+  const cm = audit && audit.continuous_mapping;
+  if (!cm || typeof cm.amount !== "number") return;
+
+  // Only AUTO owns the slider as an output/readout. In manual mode the slider is
+  // authoritative user input and must never be overwritten by a render response.
+  //
+  // The previous unconditional write caused this race:
+  //   1. Auto solved 1.00; user switches Auto off -> a manual-1.00 render starts.
+  //   2. User moves the slider to 0.50 while that render is still in flight.
+  //   3. The older manual-1.00 response arrives and writes 1.00 back into `values`.
+  //   4. pendingApply serialises the overwritten 1.00, so the first drag is lost.
+  // Guard both the response's mode and CURRENT UI mode: this also prevents a stale
+  // auto response from changing the slider after the user has switched to manual.
+  if (!cm.auto || !values.deband_auto) return;
+
+  const amount = Math.max(0, Math.min(1, Number(cm.amount)));
+  const slider = $("i_deband");
+  const val = $("v_deband");
+
+  // The solved value becomes the visible slider position. Keep `values.deband`
+  // in sync too: if the user switches Auto off, manual control starts from the
+  // value that was actually rendered instead of jumping back to the old default 1.
+  values.deband = amount;
+  if (slider) {
+    slider.value = amount;
+    syncRangeVisual(slider);
+  }
+  if (val) {
+    val.textContent = amount.toFixed(2).replace(/\.00$/, "") +
+      (cm.auto ? " · 自动" : "");
+  }
+}
+
+function buildLayerControls(main) {
+  const group = document.createElement("div");
+  group.className = "pgroup layer-controls";
+  group.innerHTML = `
+    <div class="layer-title-row">
+      <b>图层混合</b>
+      <button class="link-toggle on" id="layerLink" type="button"
+        title="点亮时亮度匹配与色彩匹配联动" aria-pressed="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M9.6 14.4l4.8-4.8M8.1 16.7l-1.4 1.4a3.4 3.4 0 01-4.8-4.8l3.2-3.2a3.4 3.4 0 014.8 0M15.9 7.3l1.4-1.4a3.4 3.4 0 014.8 4.8l-3.2 3.2a3.4 3.4 0 01-4.8 0"
+            fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="param">
+      <div class="row"><span class="name">亮度匹配</span><span class="val" id="v_luma_match">100%</span></div>
+      <input type="range" id="i_luma_match" min="0" max="100" step="1" value="100">
+      <div class="desc">越小，亮度越接近源图。</div>
+    </div>
+    <div class="param">
+      <div class="row"><span class="name">色彩匹配</span><span class="val" id="v_color_match">100%</span></div>
+      <input type="range" id="i_color_match" min="0" max="100" step="1" value="100">
+      <div class="desc">越小，色彩越接近源图。</div>
+    </div>
+    <div class="param">
+      <div class="row"><span class="name">色彩叠加</span><span class="val" id="v_overlay_amount">0</span></div>
+      <input type="range" id="i_overlay_amount" min="0" max="1" step="0.01" value="0">
+      <div class="desc">Overlay 混合后自动拉回 VELUM 明度。</div>
+    </div>
+    <div class="param">
+      <div class="row"><span class="name">叠加通道</span></div>
+      <select id="i_overlay_channel" class="absel">
+        <option value="source">源图</option>
+        <option value="reinhard">reinhard</option>
+        <option value="hm">hm-mkl-hm</option>
+      </select>
+      <div class="desc">选择参与色彩叠加的图层来源。</div>
+    </div>
+    <div class="param">
+      <div class="row"><span class="name">叠加模式</span></div>
+      <select id="i_overlay_mode" class="absel">
+        <option value="overlay">叠加</option>
+        <option value="screen">滤色</option>
+        <option value="multiply">正片叠底</option>
+        <option value="color">颜色</option>
+      </select>
+      <div class="desc">选择 Photoshop 风格的图层混合模式。</div>
+    </div>`;
+  main.appendChild(group);
+
+  const luma = $("i_luma_match"), color = $("i_color_match");
+  const overlay = $("i_overlay_amount"), channel = $("i_overlay_channel");
+  const overlayMode = $("i_overlay_mode");
+  const link = $("layerLink");
+  function setMatch(which, raw) {
+    const v = Math.max(0, Math.min(100, Number(raw)));
+    layerValues[which] = v / 100;
+    $("v_" + which).textContent = Math.round(v) + "%";
+    const input = $("i_" + which);
+    input.value = v; syncRangeVisual(input);
+  }
+  function onMatch(which, other, input) {
+    setMatch(which, input.value);
+    if (layerValues.linked) setMatch(other, input.value);
+    scheduleLayerRender();
+  }
+  luma.addEventListener("input", () => onMatch("luma_match", "color_match", luma));
+  color.addEventListener("input", () => onMatch("color_match", "luma_match", color));
+  overlay.addEventListener("input", () => {
+    layerValues.overlay_amount = Number(overlay.value);
+    $("v_overlay_amount").textContent = Number(overlay.value).toFixed(2).replace(/0+$/,"").replace(/\.$/,"") || "0";
+    syncRangeVisual(overlay); scheduleLayerRender();
+  });
+  channel.addEventListener("change", () => {
+    layerValues.overlay_channel = channel.value;
+    scheduleLayerRender();
+  });
+  overlayMode.addEventListener("change", () => {
+    layerValues.overlay_mode = overlayMode.value;
+    scheduleLayerRender();
+  });
+  link.addEventListener("click", () => {
+    layerValues.linked = !layerValues.linked;
+    link.classList.toggle("on", layerValues.linked);
+    link.setAttribute("aria-pressed", String(layerValues.linked));
+    if (layerValues.linked) {
+      setMatch("color_match", luma.value);
+      scheduleLayerRender();
+    }
+  });
+  setMatch("luma_match", 100); setMatch("color_match", 100);
+  syncRangeVisual(overlay);
+}
+
+function buildParams() {
+  // main panel: cached post-grade modulation first, then engine controls.
+  const main = $("paramsMain");
+  main.innerHTML = "";
+  buildLayerControls(main);
+  for (const p of PARAMS) {
+    if (!p.main) continue;
+    makeParamEl(main, p);
+  }
+
+}
+
+function scheduleApply() {
+  // A parameter changed -> the previous VELUM image is stale. Clear the cache so
+  // it is recomputed (and the old blob URLs are revoked), per the "只有换图或改
+  // 参数才重算并清空上一张缓存" rule.
+  velumCacheClear();
+  requestGeneration++;
+  clearTimeout(applyTimer);
+  applyTimer = setTimeout(apply, 250);   // debounce 250ms
+}
+
+function resetParams() {
+  values = {...DEFAULTS};
+  layerValues = {...LAYER_DEFAULTS};
+  buildParams();
+  requestGeneration++;
+  apply();
+}
+
+/* ------------------------------------------------------------------ */
+/* uploads                                                             */
+/* ------------------------------------------------------------------ */
+const uploadLoaders = {};
+let pasteTarget = null;
+const uploadDirty = new Set();
+let uploadBusy = false;
+function bindUpload(el, fileInput, kind) {
+  const thumb = $(kind === "src" ? "srcThumb" : "refThumb");
+  const empty = $(kind === "src" ? "srcEmpty" : "refEmpty");
+  const badge = $(kind === "src" ? "srcBadge" : "refBadge");
+
+  const load = file => {
+    if (!file) return;
+    // save the file into our own slot (drag-drop never fills the input element)
+    if (kind === "src") srcFileData = file; else refFileData = file;
+    const url = URL.createObjectURL(file);
+    const previous = thumb.src;
+    thumb.src = url; thumb.style.display = "block"; empty.style.display = "none";
+    if (previous && previous.startsWith("blob:")) URL.revokeObjectURL(previous);
+    requestGeneration++;
+    uploadDirty.add(kind);
+    drainUploads();
+  };
+  uploadLoaders[kind] = load;
+  el.addEventListener("pointerenter", () => pasteTarget = kind);
+  el.addEventListener("focus", () => pasteTarget = kind);
+  el.addEventListener("click", () => fileInput.click());
+  el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("drag"); });
+  el.addEventListener("dragleave", () => el.classList.remove("drag"));
+  el.addEventListener("drop", e => {
+    e.preventDefault(); el.classList.remove("drag");
+    const f = e.dataTransfer.files[0];
+    if (f) load(f);
+  });
+  fileInput.addEventListener("change", () => {
+    const f = fileInput.files[0];
+    if (f) load(f);
+  });
+}
+
+document.addEventListener("paste", e => {
+  const item = Array.from(e.clipboardData?.items || []).find(x =>
+    x.kind === "file" && x.type.startsWith("image/"));
+  if (!item) return;
+  const file = item.getAsFile();
+  if (!file) return;
+  // Prefer the currently hovered/focused input frame. With no explicit target,
+  // fill the first empty slot, then replace source as the deterministic fallback.
+  const kind = pasteTarget || (!srcFileData ? "src" : !refFileData ? "ref" : "src");
+  const load = uploadLoaders[kind];
+  if (!load) return;
+  e.preventDefault();
+  load(file);
+  flash(kind === "src" ? "已粘贴到源图" : "已粘贴到色彩参考图");
+});
+
+async function drainUploads() {
+  if (uploadBusy || !uploadDirty.size) return;
+  const keys = [...uploadDirty];
+  uploadDirty.clear();
+  const snapshot = new Map(keys.map(kind => [kind, kind === "src" ? srcFileData : refFileData]));
+  uploadBusy = true;
+  const generation = ++uploadGeneration;
+  const fd = new FormData();
+  for (const [kind, file] of snapshot) {
+    if (file) fd.append(kind === "src" ? "source" : "reference", file);
+  }
+  let succeeded = false;
+  try {
+      const request = fetch("/api/set-images", { method: "POST", body: fd });
+      const response = await request;
+      const j = await response.json();
+      if (!response.ok || !j.ok) throw new Error(j.error || "上传未成功");
+      if (generation !== uploadGeneration) return;
+      if (j.meta) {
+        $("srcBadge").textContent = "source: " + (j.meta.source || "-");
+        $("refBadge").textContent = "reference: " + (j.meta.reference || "-");
+      }
+      succeeded = true;
+      serverImageEpoch = Number.isInteger(j.epoch) ? j.epoch : null;
+        flash(refFileData ? "图片已更新，正在出图…" : "喂喂，你还没上传第二张图哦~");
+        // A new image invalidates every cached VELUM result. Bump the signature
+        // (so old keys can never collide) AND drop the cached blobs.
+        if (j.source || j.reference) {
+          imagesSig = String(++requestGeneration);
+          velumCacheClear();
+        }
+  } catch (err) {
+      if (generation === uploadGeneration) {
+        for (const kind of keys) uploadDirty.add(kind);
+        console.error(err); flash("上传失败，请重新选择图片重试", true);
+      }
+  } finally {
+      uploadBusy = false;
+      if (generation !== uploadGeneration || !succeeded) return;
+      const current = [...snapshot].every(([kind, file]) =>
+        (kind === "src" ? srcFileData : refFileData) === file);
+      const hasMore = uploadDirty.size > 0;
+      if (hasMore) drainUploads();
+      else if (current && srcFileData && refFileData) {
+        pendingApply = false;
+        apply();
+      }
+  }
+}
+
+function flash(msg, isErr) {
+  const el = $("flash");
+  el.textContent = msg;
+  el.style.background = isErr ? "var(--bad)" : "var(--ok)";
+  el.style.opacity = 1;
+  clearTimeout(el._t);
+  el._t = setTimeout(() => { el.style.opacity = 0; }, 1800);
+}
+
+/* A persistent, copyable modal for errors the user should be able to READ (and
+   copy for debugging), rather than a toast that vanishes in 1.8s. */
+function showErrorDialog(msg, title) {
+  const dlg = $("errDialog");
+  if (!dlg || !dlg.showModal) {   // very old browser: fall back to the toast
+    flash((title ? title + ": " : "") + msg, true);
+    return;
+  }
+  $("errDialogTitle").textContent = title || "出错了";
+  $("errDialogBody").textContent = String(msg || "");
+  if (!dlg.open) dlg.showModal();
+}
+
+(function initErrDialog() {
+  const dlg = $("errDialog");
+  if (!dlg) return;
+  const close = $("errDialogClose"), copy = $("errDialogCopy");
+  if (close) close.addEventListener("click", () => dlg.close());
+  if (copy) copy.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText($("errDialogBody").textContent);
+          copy.textContent = "已复制"; setTimeout(() => copy.textContent = "复制", 1200); }
+    catch { /* clipboard blocked; the text is selectable anyway */ }
+  });
+})();
+
+/* ------------------------------------------------------------------ */
+/* grade + audit                                                       */
+/* ------------------------------------------------------------------ */
+let pendingApply = false;
+let lastResultUrl = null;
+let lastInteractiveUrl = null;
+let lastAb = null;            // {base, velum, baseName} for AB-mode download
+let lastAbKey = null;
+let requestGeneration = 0;
+
+// Three mutually-exclusive view modes, picked by the segmented control:
+//   "single" (default) VELUM only, one image
+//   "grid"             six-panel comparison sheet
+//   "ab"               draggable baseline-vs-VELUM split
+let viewMode = "single";
+
+/* ------------------------------------------------------------------ */
+/* VELUM result cache                                                  */
+/* ------------------------------------------------------------------ */
+// Every mode that produces a VELUM image caches it, keyed by the exact inputs
+// that determine it: the current (source,reference) signature + params +
+// resolution rung. Switching mode reuses a cached image instead of recomputing;
+// changing an image or a parameter invalidates by producing a new key, and the
+// LRU is capped at 3 entries. The cache stores object URLs for <img src>.
+const velumCache = new Map();   // key -> {url, audit}
+const VELUM_CACHE_MAX = 3;
+let imagesSig = "0";            // bumped whenever source/reference changes
+
+function velumKey() {
+  // mode is intentionally NOT part of the key: single/grid/ab all render the
+  // SAME underlying VELUM image, only the surrounding presentation differs.
+  return imagesSig + "|" + resVal() + "|" + JSON.stringify(paramsPayload());
+}
+function layerPayload() {
+  return {
+    luma_match: layerValues.luma_match,
+    color_match: layerValues.color_match,
+    overlay_amount: layerValues.overlay_amount,
+    overlay_channel: layerValues.overlay_channel,
+    overlay_mode: layerValues.overlay_mode,
+  };
+}
+// The single place values are serialised for the engine, so the cache key, the
+// A/B panel and the main render all see the same parameters. Every UI key now maps
+// 1:1 onto a VelumParams field -- there is no longer any UI-only switch needing
+// translation, because the stages those switches gated are gone.
+function paramsPayload() {
+  // Auto derives its amount from the image, so the reflected slider readout must not
+  // become a new engine input/cache key after every render. Keep the solved value in
+  // `values` for display and for a later switch to manual, but send a stable sentinel
+  // while Auto is active.
+  return {...values, deband: values.deband_auto ? 0 : values.deband};
+}
+function displayKey(mode=viewMode) {
+  return velumKey() + "|" + mode + "|" + JSON.stringify(layerPayload());
+}
+function velumCacheGet(key) {
+  const hit = velumCache.get(key);
+  if (hit) {                    // refresh LRU recency
+    velumCache.delete(key);
+    velumCache.set(key, hit);
+  }
+  return hit || null;
+}
+function velumCachePut(key, entry) {
+  if (velumCache.has(key)) velumCache.delete(key);
+  velumCache.set(key, entry);
+  while (velumCache.size > VELUM_CACHE_MAX) {
+    const oldest = velumCache.keys().next().value;
+    const ev = velumCache.get(oldest);
+    if (ev && ev.url) { try { URL.revokeObjectURL(ev.url); } catch {} }
+    velumCache.delete(oldest);
+  }
+}
+function velumCacheClear() {
+  for (const ev of velumCache.values()) {
+    if (ev && ev.url) { try { URL.revokeObjectURL(ev.url); } catch {} }
+  }
+  velumCache.clear();
+  // Keep the currently displayed palette/theme while a new image or parameter
+  // is processing. The page transitions directly from old theme to new theme
+  // when the next VELUM result arrives; no temporary jump back to defaults.
+}
+function revokeInteractiveUrl() {
+  if (lastInteractiveUrl) { try { URL.revokeObjectURL(lastInteractiveUrl); } catch {} }
+  lastInteractiveUrl = null;
+}
+
+function hasBothImages(showHint=true) {
+  const ok = !!(srcFileData && refFileData);
+  if (!ok && showHint) flash("喂喂，你还没上传第二张图哦~");
+  return ok;
+}
+
+// Selected output-resolution ladder rung (long-edge px cap; "0" = native/no cap).
+// Sent as max_output_side on every grade request so the server shrinks the
+// working images before grade() -- the single biggest speed lever while tuning.
+function resVal() {
+  const el = $("resSel");
+  return el ? el.value : "0";
+}
+
+function progStart() {
+  const w = $("progressWrap"), b = $("progressBar");
+  w.classList.remove("done");
+  b.classList.add("indeterminate");
+  const mode = values.compute_backend || "auto";
+  const hint = mode === "cpu" ? "CPU" : mode === "gpu" ? "GPU" : "自动检测设备";
+  $("progressStage").textContent = hint;
+}
+// Real, stage-driven progress: set the bar to an exact fraction and name the
+// current stage. Called from the SSE 'progress' events so the user sees which
+// stage is running and how far along the pipeline is (debug-friendly).
+function progSet(frac, label, elapsedMs) {
+  const w = $("progressWrap"), b = $("progressBar"), s = $("progressStage");
+  w.classList.remove("done");
+  b.classList.remove("indeterminate");
+  b.style.width = Math.round(frac * 100) + "%";
+  if (s) s.textContent = label
+    ? `${label}  ${Math.round(frac * 100)}%` + (elapsedMs != null ? `  ·  ${elapsedMs} ms` : "")
+    : "";
+}
+function progEnd() {
+  // Keep the track RESIDENT (never display:none) so finishing a render does not
+  // change the column height and shove the result image. The bar fills to 100%,
+  // then quietly empties back to 0% in place, ready for the next render.
+  const w = $("progressWrap"), b = $("progressBar"), s = $("progressStage");
+  b.classList.remove("indeterminate");
+  w.classList.remove("done");
+  b.style.width = "100%";
+  setTimeout(() => {
+    b.style.width = "0%";
+    if (s) s.textContent = "";
+  }, 300);
+}
+
+// One live SSE grade, so we can cancel the previous when a new one starts.
+let curEvtSource = null;
+
+function showResultImage(url) {
+  if (url) $("result").src = url;
+  $("result").hidden = !url;
+  $("resultEmpty").hidden = !!url;
+  $("result").style.display = url ? "" : "none";
+  $("resultEmpty").style.display = url ? "none" : "flex";
+}
+
+// Real-time layer compositing throttle, PS-like: while a request is in flight we
+// do NOT queue a debounce timer that only fires on mouse-release; we mark that a
+// newer state exists and fire it THE MOMENT the current one returns. Combined
+// with a tiny leading delay this coalesces a fast slider drag into a continuous
+// stream of renders (one always in flight, the latest always pending) instead of
+// a burst that only lands when the user stops. layerBusy is the in-flight lock;
+// layerDirty means "state changed since the in-flight render started".
+let layerBusy = false;
+let layerDirty = false;
+let commitTimer = null;
+let lastInteractiveKey = null;   // key of the on-screen lossy preview, if any
+function scheduleLayerRender() {
+  requestGeneration++;
+  // Every change schedules (a) an immediate INTERACTIVE frame -- cheap, lossy,
+  // no palette -- and (b) a trailing COMMIT frame that re-renders losslessly and
+  // refreshes the palette once the user stops moving. That split is what buys a
+  // PS-like drag without degrading the image the user finally looks at.
+  clearTimeout(commitTimer);
+  commitTimer = setTimeout(commitLayerRender, 220);
+  if (layerBusy) { layerDirty = true; return; }   // coalesce: newest wins on return
+  clearTimeout(layerTimer);
+  layerTimer = setTimeout(() => renderLayers(true), 0);
+}
+
+// The lossless commit must not race an in-flight preview; if one is running,
+// wait and retry so the last thing rendered is always the committed frame.
+function commitLayerRender() {
+  if (layerBusy) {
+    clearTimeout(commitTimer);
+    commitTimer = setTimeout(commitLayerRender, 80);
+    return;
+  }
+  renderLayers(false);
+}
+
+async function renderLayers(interactive = false) {
+  if (uploadBusy || uploadDirty.size) { layerDirty = true; return; }
+  if (!hasBothImages(false)) return;
+  if (viewMode === "ab") { loadAb(); return; }
+  const mode = viewMode === "grid" ? "grid" : "single";
+  const key = displayKey(mode);
+  const generation = ++requestGeneration;
+  const hit = velumCacheGet(key);
+  if (hit) {
+    revokeInteractiveUrl();
+    lastResultUrl = hit.url; showResultImage(hit.url);
+    $("timeStat").textContent = "图层缓存";
+    deferPalette(hit.audit || {});               // palette is not on the hot path
+    // even a cache hit may be followed by a newer pending state
+    if (layerDirty) { layerDirty = false; scheduleLayerRender(); }
+    return;
+  }
+  // An interactive frame already showing this exact state is nothing to redo.
+  if (interactive && lastInteractiveKey === key) {
+    if (layerDirty) { layerDirty = false; scheduleLayerRender(); }
+    return;
+  }
+  const fd = new FormData();
+  fd.append("params", JSON.stringify(paramsPayload()));
+  fd.append("layers", JSON.stringify(layerPayload()));
+  fd.append("mode", mode);
+  fd.append("max_output_side", resVal());
+  // Interactive frames ask the server to skip the palette quantisation and use a
+  // fast JPEG; the trailing commit render (fired once the drag settles) asks for
+  // the full lossless PNG + palette. This is what makes the drag itself real-time.
+  if (interactive) fd.append("fast", "1");
+  layerBusy = true;
+  try {
+    const res = await fetch("/api/render_layers", {method:"POST", body:fd});
+    if (generation !== requestGeneration) return;
+    if (res.status === 409) { apply(); return; } // raw VELUM cache not ready
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const audit = JSON.parse(res.headers.get("X-Audit") || "{}");
+    const url = URL.createObjectURL(await res.blob());
+    if (generation !== requestGeneration) { URL.revokeObjectURL(url); return; }
+    // HOT PATH: swap the image immediately. Nothing else here is allowed to
+    // touch the page's CSS variables or do heavy DOM work, or the drag stutters.
+    lastResultUrl = url; showResultImage(url);
+    if (interactive) {
+      // Lossy, palette-less preview: show it, but never store it in the result
+      // cache -- otherwise a later mode switch would serve a JPEG as if it were
+      // the committed render. The trailing commit render fills the cache.
+      revokeInteractiveUrl();
+      lastInteractiveUrl = url;
+      lastInteractiveKey = key;
+      $("timeStat").textContent = (audit.time_ms ?? 0) + " ms · 拖动预览";
+    } else {
+      revokeInteractiveUrl();
+      lastInteractiveKey = null;
+      velumCachePut(key, {url, audit});
+      $("timeStat").textContent = (audit.time_ms ?? 0) + " ms · 图层混合";
+      // COLD PATH: the palette bar + adaptive theme recompute a dozen CSS vars
+      // and force a full-page repaint, far too costly per drag frame. Only the
+      // committed render refreshes them.
+      deferPalette(audit);
+    }
+  } catch (e) {
+    if (generation === requestGeneration) { console.error(e); flash("图层混合失败: " + e.message, true); }
+  } finally {
+    layerBusy = false;
+    // a state change arrived while this render was in flight -> fire the latest
+    if (layerDirty) { layerDirty = false; scheduleLayerRender(); }
+  }
+}
+
+// Trailing-debounced palette/theme update. Kept OFF the per-frame layer path
+// because applyAdaptiveTheme() rewrites many CSS custom properties and repaints
+// the whole page; running it only after the drag pauses keeps the image swap
+// smooth while still refreshing the配色条 "as fast as it can" (~140ms after the
+// last change), which is the honest tradeoff: the result image is truly
+// real-time, the palette bar is near-real-time but not per-frame.
+let _paletteTimer = null;
+let _palettePending = null;
+function deferPalette(audit) {
+  const generation = requestGeneration;
+  _palettePending = audit;
+  clearTimeout(_paletteTimer);
+  _paletteTimer = setTimeout(() => {
+    if (generation === requestGeneration) {
+      renderAudit(_palettePending || {});
+      renderPalette(_palettePending || {});
+    }
+  }, 140);
+}
+
+async function apply() {
+  requestGeneration++;
+  if (uploadBusy || uploadDirty.size) { pendingApply = true; return; }
+  // When the A/B split view is open, EVERY trigger that would normally re-grade
+  // refreshes the A/B view instead. AB has its own two-image payload path.
+  if (viewMode === "ab") { loadAb(); return; }
+  if (!hasBothImages()) return;
+
+  // grid = six-panel sheet, single = plain VELUM (cheaper while dragging).
+  const mode = viewMode === "grid" ? "grid" : "single";
+  const cacheKey = displayKey(mode);
+
+  // CACHE HIT: this exact (images,params,resolution,mode) was rendered before.
+  // Reuse it immediately -- no recompute, no request. This is what makes mode
+  // switching instant when the inputs and params have not changed.
+  const hit = velumCacheGet(cacheKey);
+  if (hit) {
+    lastResultUrl = hit.url;
+    showResultImage(hit.url);
+    renderAudit(hit.audit || {});
+    reflectDebandAudit(hit.audit || {});
+    renderPalette(hit.audit || {});
+    $("timeStat").textContent =
+      (hit.audit && hit.audit.time_ms ? hit.audit.time_ms + " ms" : "") + " · 缓存";
+    progEnd();
+    return;
+  }
+
+  if (busy) { pendingApply = true; return; }   // latest request wins
+  busy = true;
+  const generation = requestGeneration;
+  progStart();
+  // Deliberately DO NOT dim the result while computing: keeping the previous
+  // version at full opacity lets the user read it, then see it JUMP to the new
+  // result the instant it swaps in -- a direct before/after of the parameter
+  // change. The progress bar already signals that work is in flight.
+
+  const qs = "params=" + encodeURIComponent(JSON.stringify(paramsPayload()))
+           + "&layers=" + encodeURIComponent(JSON.stringify(layerPayload()))
+           + "&mode=" + mode
+           + "&max_output_side=" + encodeURIComponent(resVal());
+
+  // Close any in-flight stream (latest wins) before starting a new one.
+  if (curEvtSource) { curEvtSource.close(); curEvtSource = null; }
+
+  await new Promise(resolve => {
+    const es = new EventSource("/api/grade_stream?" + qs);
+    curEvtSource = es;
+    let finished = false;
+    const cleanup = () => {
+      if (es === curEvtSource) curEvtSource = null;
+      es.close();
+    };
+    es.addEventListener("progress", ev => {
+      if (generation !== requestGeneration) return;
+      const d = JSON.parse(ev.data);
+      const backend = d.backend ? d.backend.toUpperCase() : "";
+      const label = d.label || (backend ? `[${backend}]` : "");
+      progSet(d.frac, label, d.elapsed_ms);
+    });
+    es.addEventListener("done", async ev => {
+      finished = true;
+      const d = JSON.parse(ev.data);
+      cleanup();
+      if (generation !== requestGeneration) { resolve(); return; }
+      const audit = d.audit || {};
+      // fetch the finished PNG (cached server-side by the stream) and cache it
+      try {
+        const res = await fetch("/api/last_result", { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        if (generation !== requestGeneration) { URL.revokeObjectURL(url); resolve(); return; }
+        revokeInteractiveUrl();
+        lastResultUrl = url;
+        showResultImage(url);
+        velumCachePut(cacheKey, { url, audit });
+      } catch (e) { console.error(e); }
+       if (generation !== requestGeneration) { resolve(); return; }
+       renderAudit(audit);
+      reflectDebandAudit(audit);
+      renderPalette(audit);
+      $("timeStat").textContent = audit.time_ms ? audit.time_ms + " ms" : "";
+      resolve();
+    });
+    es.addEventListener("error", ev => {
+      let msg = "连接中断", hadData = false;
+      try { if (ev.data) {
+        const j = JSON.parse(ev.data);
+        msg = j.error || msg;
+        hadData = true;
+      } } catch {}
+      if (!finished && generation === requestGeneration) {
+        console.error("stream error", ev);
+        // A server-sent error payload is a real render failure the user should be
+        // able to read/copy -> modal dialog. A bare connection drop with no
+        // payload stays a transient toast.
+        if (hadData) showErrorDialog(msg, "出图失败");
+        else flash("出图失败: " + msg, true);
+      }
+      cleanup();
+      resolve();
+    });
+  });
+
+  busy = false;
+  progEnd();
+  if (pendingApply) { pendingApply = false; apply(); }
+}
+
+function renderAudit(a) {
+  // The old blue/cobalt/span/shadow metrics were tuned to a much earlier version
+  // of the pipeline and no longer reflect what it does; they were removed rather
+  // than shown as misleading numbers. The audit strip is intentionally empty now.
+  // (Kept as a no-op so every caller -- apply/loadAb/cache-hit -- stays valid.)
+  const box = $("audit");
+  if (box) box.innerHTML = "";
+}
+
+const DEFAULT_THEME = {
+  bg:"#feeede", panel:"#feeede", frame:"rgba(239,226,211,.75)",
+  text:"#514b45", ink:"#37342f", dim:"rgba(55,52,47,.50)",
+  acc:"#b5a102", rangeRest:"rgba(138,186,188,.75)", accContrast:"#fffdf3",
+};
+const DARK_THEME = {
+  // Low-saturation charcoal-violet: keeps the reference mood while avoiding
+  // the previous neon-purple cast across large surfaces.
+  bg:"#16161c", panel:"#16161c", frame:"rgba(44,43,52,.90)",
+  text:"#e3e1e6", ink:"#e3e1e6", dim:"rgba(174,170,181,.62)",
+  line:"rgba(143,138,153,.17)", acc:"#8d80a5",
+  rangeRest:"rgba(78,75,87,.90)", accContrast:"#17161b",
+};
+let skinMode = "magic";
+let lastMagicColors = [];
+
+function setThemeVars(t) {
+  const root = document.documentElement.style;
+  root.setProperty("--bg", t.bg);
+  root.setProperty("--panel", t.panel);
+  root.setProperty("--frame", t.frame);
+  root.setProperty("--panel2", t.frame);
+  root.setProperty("--canvas", t.frame);
+  root.setProperty("--text", t.text);
+  root.setProperty("--ink", t.ink);
+  root.setProperty("--dim", t.dim);
+  root.setProperty("--line", t.line || "rgba(74,68,60,.14)");
+  root.setProperty("--acc", t.acc);
+  root.setProperty("--range-rest", t.rangeRest);
+  root.setProperty("--acc-contrast", t.accContrast);
+}
+
+function setSkin(mode, persist=true) {
+  skinMode = ["light","dark","magic"].includes(mode) ? mode : "magic";
+  document.querySelectorAll("#skinSwitch [data-skin]").forEach(btn =>
+    btn.classList.toggle("on", btn.dataset.skin === skinMode));
+  if (skinMode === "light") setThemeVars(DEFAULT_THEME);
+  else if (skinMode === "dark") setThemeVars(DARK_THEME);
+  else applyAdaptiveTheme(lastMagicColors);
+  if (persist) try { localStorage.setItem("velum-skin", skinMode); } catch {}
+}
+
+function hexToRgb(hex) {
+  const s = String(hex).replace("#", "");
+  const v = parseInt(s.length === 3 ? s.split("").map(x => x + x).join("") : s, 16);
+  return { r:(v >> 16) & 255, g:(v >> 8) & 255, b:v & 255 };
+}
+function rgbToHsl({r,g,b}) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r,g,b), min = Math.min(r,g,b), d = max-min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g-b)/d) % 6;
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h = (h*60 + 360) % 360;
+  }
+  const l = (max+min)/2;
+  const s = d ? d/(1-Math.abs(2*l-1)) : 0;
+  return {h, s:s*100, l:l*100};
+}
+function hexToHsl(hex) { return rgbToHsl(hexToRgb(hex)); }
+function rgbaFromHex(hex, alpha) {
+  const {r,g,b} = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+function hslCss({h,s,l}) {
+  return `hsl(${h.toFixed(2)} ${Math.max(0,Math.min(100,s)).toFixed(2)}% ${Math.max(0,Math.min(100,l)).toFixed(2)}%)`;
+}
+function hslaCss({h,s,l}, alpha=.75) {
+  return `hsl(${h.toFixed(2)} ${Math.max(0,Math.min(100,s)).toFixed(2)}% ${Math.max(0,Math.min(100,l)).toFixed(2)}% / ${alpha})`;
+}
+
+function applyAdaptiveTheme(colors) {
+  lastMagicColors = colors ? colors.map(x => ({...x})) : [];
+  if (skinMode !== "magic") return;
+  const root = document.documentElement.style;
+  if (!colors || !colors.length) {
+    setThemeVars(DEFAULT_THEME);
+    return;
+  }
+
+  const enriched = colors.map((c, index) => ({...c, index, hsl:hexToHsl(c.hex)}));
+  const top1 = enriched[0];
+
+  // Background: Top-1 hue, 75% of its saturation, and ±5 HSL-lightness away
+  // from the absolute neutral midpoint (L=50), exactly as specified.
+  const bgHsl = {
+    h:top1.hsl.h,
+    s:top1.hsl.s * .75,
+    l:top1.hsl.l >= 50 ? top1.hsl.l - 5 : top1.hsl.l + 5,
+  };
+  const bg = hslCss(bgHsl);
+
+  // Dark type: palette colour whose HSL lightness differs most from Top-1.
+  const dark = enriched.reduce((best,c) =>
+    Math.abs(c.hsl.l-top1.hsl.l) > Math.abs(best.hsl.l-top1.hsl.l) ? c : best,
+    enriched[0]);
+
+  // Frame/right-track colour starts at share Top-2. If that exact palette colour
+  // is also the dark-type colour, walk down the share ranking (Top-3, Top-4...)
+  // until the two roles no longer collide. Then lower only its saturation to
+  // 75%; hue and lightness remain unchanged.
+  let frameSource = enriched[1] || enriched[0];
+  if (frameSource.index === dark.index) {
+    frameSource = enriched.slice(2).find(c => c.index !== dark.index) || top1;
+  }
+  const frameHsl = {
+    h:frameSource.hsl.h,
+    s:frameSource.hsl.s * .75,
+    l:frameSource.hsl.l,
+  };
+  // Rounded surfaces and the range's right segment share this colour at 75%
+  // opacity, allowing the page background to blend through without changing
+  // the selected hue/lightness or the 75%-saturation rule above.
+  const frameColor = hslaCss(frameHsl, .75);
+
+  // Accent: highest-saturation colour; if that is Top-1, use saturation Top-2.
+  const bySat = [...enriched].sort((a,b) => b.hsl.s-a.hsl.s || a.index-b.index);
+  let accent = bySat[0] || top1;
+  const satTieWithTop1 = Math.abs((bySat[0]?.hsl.s ?? 0)-top1.hsl.s) < 1e-4;
+  if ((accent.index === top1.index || satTieWithTop1) && bySat.length > 1) {
+    accent = bySat.find(c => c.index !== top1.index) || bySat[1];
+  }
+
+  // Button labels need their own contrast. This does not change any requested
+  // theme colour: it only chooses, from the same palette, the colour whose HSL
+  // lightness is farthest from the accent so text cannot disappear when the
+  // "dark type" and saturation winner happen to be the same cluster.
+  const accentText = enriched.reduce((best,c) =>
+    Math.abs(c.hsl.l-accent.hsl.l) > Math.abs(best.hsl.l-accent.hsl.l) ? c : best,
+    enriched[0]);
+
+  root.setProperty("--bg", bg);
+  root.setProperty("--panel", bg);
+  root.setProperty("--frame", frameColor);
+  root.setProperty("--panel2", frameColor);
+  root.setProperty("--canvas", frameColor);
+  root.setProperty("--range-rest", frameColor);
+  root.setProperty("--ink", dark.hex);
+  root.setProperty("--text", dark.hex);
+  root.setProperty("--dim", rgbaFromHex(dark.hex, .50));
+  root.setProperty("--line", rgbaFromHex(dark.hex, .16));
+  root.setProperty("--acc", accent.hex);
+  root.setProperty("--acc-soft", rgbaFromHex(accent.hex, .24));
+  root.setProperty("--acc-contrast", accentText.hex);
+}
+
+function renderPalette(a) {
+  const wrap = $("paletteWrap"), bar = $("paletteBar"), count = $("paletteCount");
+  if (!wrap || !bar) return;
+  const colors = Array.isArray(a && a.palette)
+    ? a.palette.slice(0, 10).filter(x => x && x.hex && Number(x.share) > 0)
+    : [];
+  if (!colors.length) {
+    applyAdaptiveTheme([]);
+    wrap.hidden = true;
+    bar.innerHTML = "";
+    if (count) count.textContent = "";
+    return;
+  }
+  colors.sort((x, y) => Number(y.share) - Number(x.share));
+  applyAdaptiveTheme(colors);
+  const topSum = colors.reduce((s, x) => s + Number(x.share), 0);
+  bar.innerHTML = "";
+  for (const col of colors) {
+    const rawShare = Number(col.share);
+    const normalized = topSum > 0 ? rawShare / topSum : 0;
+    const swatch = document.createElement("div");
+    swatch.className = "palette-swatch";
+    swatch.style.background = col.hex;
+    // A width = bar width × A share / sum(Top-N shares). flex-basis expresses
+    // that formula exactly while remaining responsive to the result width.
+    swatch.style.flex = `${normalized} 0 ${normalized * 100}%`;
+    swatch.dataset.tip = `${col.hex.toUpperCase()} · ${(rawShare * 100).toFixed(1)}%`;
+    bar.appendChild(swatch);
+  }
+  if (count) count.textContent = `TOP ${colors.length} · ${(topSum * 100).toFixed(1)}%`;
+  wrap.hidden = false;
+}
+
+/* ------------------------------------------------------------------ */
+/* buttons                                                             */
+/* ------------------------------------------------------------------ */
+$("btnApply").addEventListener("click", apply);
+$("btnReset").addEventListener("click", resetParams);
+$("btnClear").addEventListener("click", () => {
+  requestGeneration++;
+  uploadGeneration++;
+  uploadDirty.clear();
+  serverImageEpoch = null;
+  srcFileData = refFileData = null;
+  pendingApply = layerDirty = false;
+  fetch("/api/reset", { method: "POST" }).then(() => location.reload());
+});
+$("resSel").addEventListener("change", apply);
+
+// view-mode segmented control: single | grid | ab, mutually exclusive.
+// Switching modes never invalidates the cache -- if the same inputs+params were
+// already rendered in the target mode, apply()/loadAb() serve it instantly.
+function setViewMode(mode) {
+  if (mode === viewMode) return;
+  viewMode = mode;
+  $("segSingle").classList.toggle("on", mode === "single");
+  $("segGrid").classList.toggle("on", mode === "grid");
+  $("segAb").classList.toggle("on", mode === "ab");
+  if (mode === "ab") {
+    // enter the split view (loadAb reveals #abbox and hides #result/#audit)
+    loadAb();
+  } else {
+    // single or grid: leave the split view, show the single-image region
+    $("abbox").hidden = true;
+    document.querySelector(".result-stage").style.display = "flex";
+    $("result").style.display = "";
+    $("resultEmpty").style.display = "";
+    if (lastResultUrl) showResultImage(lastResultUrl);
+    else showResultImage(null);
+    $("audit").style.display = "";
+    apply();
+  }
+}
+$("segSingle").addEventListener("click", () => setViewMode("single"));
+$("segGrid").addEventListener("click", () => setViewMode("grid"));
+$("segAb").addEventListener("click", () => setViewMode("ab"));
+
+// "放大查看": reopen the current comparison sheet in a dedicated window
+$("btnCompare").addEventListener("click", () => {
+  if (!lastResultUrl) { flash("还没有结果", true); return; }
+  const w = window.open("", "_blank");
+  w.document.write(`<title>velum comparison</title>
+    <body style="margin:0;background:#000"><img src="${lastResultUrl}" style="width:100%;display:block"></body>`);
+});
+
+function downloadDataUrl(url, name) {
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+}
+$("btnSave").addEventListener("click", async () => {
+  if (uploadBusy || uploadDirty.size || busy || layerBusy) {
+    flash("请等待当前处理完成后保存", true); return;
+  }
+  if (viewMode === "ab") {
+    // In AB mode there is no single sheet -- download BOTH compared images.
+    if (!lastAb || lastAbKey !== displayKey("ab") + "|" + $("abBaseSel").value) {
+      flash("请等待当前参数的 AB 结果完成后保存", true); return;
+    }
+    const pair = lastAb;
+    downloadDataUrl("data:image/png;base64," + pair.velum, "velum_A_velum.png");
+    // second download shortly after; some browsers ignore two synchronous clicks
+    setTimeout(() => downloadDataUrl(
+      "data:image/png;base64," + pair.base,
+      "velum_B_" + (pair.baseName || "baseline") + ".png"), 150);
+    flash("已下载 A(VELUM) 与 B(" + (lastAb.baseName || "baseline") + ") 两张图");
+    return;
+  }
+  const key = displayKey(viewMode);
+  if (!velumCacheGet(key) && lastInteractiveKey) {
+    clearTimeout(layerTimer); clearTimeout(commitTimer);
+    layerDirty = false;
+    await renderLayers(false);
+  }
+  const result = key === displayKey(viewMode) && velumCacheGet(key);
+  if (!result) { flash("请等待当前图片的无损结果完成后保存", true); return; }
+  downloadDataUrl(result.url, "velum_result.png");
+});
+
+/* ------------------------------------------------------------------ */
+/* A/B split comparison (baseline vs VELUM)                            */
+/* ------------------------------------------------------------------ */
+let abFlipped = false;     // when flipped, left shows VELUM and right shows baseline
+let abBaselineName = "hm-mkl-hm";
+
+async function loadAb() {
+  requestGeneration++;
+  // Same latest-wins guard as apply(): while a refresh is in flight, coalesce
+  // further triggers into one trailing refresh, so dragging a slider does not
+  // pile up requests -- only the final value is rendered.
+  if (!hasBothImages()) return;
+  if (uploadBusy || uploadDirty.size) { pendingApply = true; return; }
+  if (busy) { pendingApply = true; return; }
+  busy = true;
+  const generation = requestGeneration;
+  const firstOpen = $("abbox").hidden;
+  const key = displayKey("ab") + "|" + $("abBaseSel").value;
+  if (firstOpen) openAb();            // show the frame immediately on first open
+  progStart();
+  $("abbox").classList.add("wait");   // dim the split view while refreshing
+  const fd = new FormData();
+  fd.append("params", JSON.stringify(paramsPayload()));
+  fd.append("layers", JSON.stringify(layerPayload()));
+  fd.append("baseline", $("abBaseSel").value);
+  fd.append("max_output_side", resVal());
+  try {
+    const res = await fetch("/api/ab", { method: "POST", body: fd });
+    if (generation !== requestGeneration) return;
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      showErrorDialog(j.error || ("HTTP " + res.status), "AB 出图失败");
+      return;
+    }
+    const j = await res.json();
+    if (generation !== requestGeneration) return;
+    abBaselineName = j.baseline === "cube" ? "cube 预览" : (j.baseline || $("abBaseSel").value);
+    lastAb = { base: j.base, velum: j.velum, baseName: j.baseline === "cube" ? "cube" : abBaselineName };
+    lastAbKey = key;
+    $("abHint").textContent = j.lut
+      ? `cube 预览：与原生 VELUM 平均误差 ${j.lut.rmse_255.toFixed(2)}/255，P95 ${j.lut.p95_error_255.toFixed(2)}/255 · 拖动分割线左右对比`
+      : "拖动分割线左右对比，双击分割线切换方向";
+    // the spacer (in normal flow) is what gives the wrapper its height, so it
+    // must carry a real image; use velum (same size as baseline).
+    $("abSpacer").src = "data:image/png;base64," + j.velum;
+    $("abBase").src = "data:image/png;base64," + j.base;
+    $("abVelum").src = "data:image/png;base64," + j.velum;
+    const audit = JSON.parse(res.headers.get("X-Audit") || "{}");
+    renderAudit(audit);
+    reflectDebandAudit(audit);
+    renderPalette(audit);
+    $("timeStat").textContent = audit.time_ms ? (audit.time_ms + " ms · AB") : "";
+    applyAbFlip();                    // keep clip/labels in sync after new images
+  } catch (e) {
+    console.error(e);
+    flash("AB 请求出错: " + e.message, true);
+  } finally {
+    busy = false;
+    progEnd();
+    $("abbox").classList.remove("wait");
+    if (pendingApply) { pendingApply = false; apply(); }
+  }
+}
+
+function openAb() {
+  $("abbox").hidden = false;
+  document.querySelector(".result-stage").style.display = "none";
+  $("result").style.display = "none";
+  $("resultEmpty").style.display = "none";
+  $("audit").style.display = "none";
+  if (!$("abwrap").style.getPropertyValue("--abpos")) setAbPos(50);
+  applyAbFlip();
+}
+
+
+
+function setAbPos(pct) {
+  $("abwrap").style.setProperty("--abpos", pct + "%");
+}
+
+/* divider drag: update clip-path + divider position from pointer */
+function bindAbDrag() {
+  const wrap = $("abwrap");
+  const div = $("abDiv");
+  let dragging = false;
+
+  const move = ev => {
+    const r = wrap.getBoundingClientRect();
+    const x = ev.clientX - r.left;
+    const pct = Math.max(0, Math.min(100, (x / r.width) * 100));
+    setAbPos(pct);
+    applyAbFlip();               // re-apply clip so the divider tracks in both modes
+  };
+  div.addEventListener("pointerdown", e => {
+    dragging = true;
+    div.setPointerCapture(e.pointerId);
+    move(e);
+    e.preventDefault();
+  });
+  div.addEventListener("pointermove", e => { if (dragging) move(e); });
+  div.addEventListener("pointerup", () => dragging = false);
+  div.addEventListener("pointercancel", () => dragging = false);
+  wrap.addEventListener("click", e => {
+    if (e.target === div || e.target.closest(".abknob")) return;
+    move(e);                       // click anywhere: divider jumps there
+  });
+}
+
+/* flip the two sides: the UPPER layer is always the "right side" algorithm,
+   so flipping = swapping which image sits on top + which gets clipped. */
+function applyAbFlip() {
+  const pos = parseFloat($("abwrap").style.getPropertyValue("--abpos") || "50");
+  if (abFlipped) {
+    // baseline on top (right side = baseline), velum underneath (left = velum)
+    $("abBase").style.zIndex = "2";
+    $("abVelum").style.zIndex = "1";
+    $("abBase").style.clipPath = "inset(0 0 0 " + pos + "%)";
+    $("abVelum").style.clipPath = "none";
+    $("abL").textContent = "VELUM";
+    $("abR").textContent = abBaselineName;
+  } else {
+    // velum on top (right side = velum), baseline underneath (left = baseline)
+    $("abVelum").style.zIndex = "2";
+    $("abBase").style.zIndex = "1";
+    $("abVelum").style.clipPath = "inset(0 0 0 " + pos + "%)";
+    $("abBase").style.clipPath = "none";
+    $("abL").textContent = abBaselineName;
+    $("abR").textContent = "VELUM";
+  }
+}
+
+$("abDiv").addEventListener("dblclick", () => { abFlipped = !abFlipped; applyAbFlip(); });
+// switching the baseline algorithm re-fetches (only meaningful in AB mode)
+$("abBaseSel").addEventListener("change", () => { if (viewMode === "ab") loadAb(); });
+bindAbDrag();
+
+/* ------------------------------------------------------------------ */
+/* init                                                                */
+/* ------------------------------------------------------------------ */
+bindUpload($("upSrc"), $("srcFile"), "src");
+bindUpload($("upRef"), $("refFile"), "ref");
+buildParams();
+
+document.querySelectorAll("#skinSwitch [data-skin]").forEach(btn =>
+  btn.addEventListener("click", () => setSkin(btn.dataset.skin)));
+let savedSkin = "magic";
+try { savedSkin = localStorage.getItem("velum-skin") || "magic"; } catch {}
+setSkin(savedSkin, false);
+
+// Sync default values from the server's ACTUAL VelumParams, so the panel can
+// never drift from the engine again (the rename bug that started this session).
+// The slider ranges/labels are still ours; only the defaults come from the
+// server, and unknown server keys are ignored.
+fetch("/api/status")
+  .then(r => r.json())
+  .then(spec => {
+    if (spec.standalone_cpu_only?.value) {
+      const backend = PARAMS.find(p => p.key === "compute_backend");
+      if (backend) backend.options = [["cpu", "CPU（独立整合包）"]];
+    }
+    for (const p of PARAMS) {
+      if (spec[p.key] !== undefined) {
+        p.def = spec[p.key].value;
+      }
+    }
+    Object.assign(DEFAULTS, Object.fromEntries(PARAMS.map(p => [p.key, p.def])));
+    values = {...DEFAULTS};
+    buildParams();
+  })
+  .catch(e => console.warn("status sync failed (defaults kept):", e));
+</script>
+<script src="/lut_export.js"></script>
+</body>
+</html>
